@@ -8,7 +8,7 @@
 -- ============================================================
 create table if not exists prestamos (
   id uuid primary key default gen_random_uuid(),
-  tipo text not null check (tipo in ('me_prestan', 'yo_presto', 'inversion')),
+  tipo text not null check (tipo in ('me_prestan', 'yo_presto', 'inversion', 'credito')),
   contraparte text not null,              -- ej. "Esposa", "Juan Pérez", nombre del negocio
   monto_inicial numeric(12,2) not null,
   saldo_pendiente numeric(12,2) not null, -- para 'yo_presto' incluye el interés (monto + interes)
@@ -40,10 +40,12 @@ create table if not exists movimientos (
   fecha date not null default current_date,
   foto_url text,                          -- URL pública del bucket 'sustentos'
   prestamo_id uuid references prestamos(id) on delete set null,
+  estado text not null default 'confirmado' check (estado in ('confirmado', 'programado')), -- 'programado' = fecha futura, no cuenta en totales hasta confirmarse
   created_at timestamptz not null default now()
 );
 
 create index if not exists idx_movimientos_fecha on movimientos(fecha desc);
+create index if not exists idx_movimientos_estado on movimientos(estado);
 create index if not exists idx_movimientos_prestamo on movimientos(prestamo_id);
 
 -- ============================================================

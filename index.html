@@ -154,8 +154,8 @@
   }
   .modal-box h3{margin:0 0 16px;}
   .modal-cerrar{float:right; background:none; border:none; font-size:20px; color:var(--texto-suave);}
-  .tipo-toggle{display:flex; gap:8px; margin-bottom:14px;}
-  .tipo-toggle button{
+  .tipo-toggle{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
+  .tipo-toggle button{min-width:calc(50% - 4px);
     flex:1; padding:11px; border-radius:10px; border:1px solid var(--borde); background:#fafbff; font-weight:600; color:var(--texto-suave);
   }
   .tipo-toggle button.sel-ingreso{background:var(--verde-suave); border-color:var(--verde); color:var(--verde);}
@@ -223,6 +223,11 @@
         </div>
       </div>
 
+      <div id="seccionProximos" style="display:none;">
+        <div class="seccion-titulo">📅 Próximos programados</div>
+        <div id="listaProximos"></div>
+      </div>
+
       <div class="seccion-titulo">Últimos movimientos</div>
       <div id="listaInicioMov"></div>
     </div>
@@ -233,6 +238,7 @@
         <button class="activo" data-filtro="todos" onclick="filtrarMovimientos('todos')">Todos</button>
         <button data-filtro="ingreso" onclick="filtrarMovimientos('ingreso')">Ingresos</button>
         <button data-filtro="egreso" onclick="filtrarMovimientos('egreso')">Egresos</button>
+        <button data-filtro="programados" onclick="filtrarMovimientos('programados')">Programados</button>
       </div>
       <div id="listaMovimientos"></div>
     </div>
@@ -245,6 +251,8 @@
       <div id="listaMePrestan"></div>
       <div class="seccion-titulo">Inversiones</div>
       <div id="listaInversion"></div>
+      <div class="seccion-titulo">Créditos (bancos)</div>
+      <div id="listaCredito"></div>
     </div>
 
     <!-- ---- DETALLE PRESTAMO ---- -->
@@ -324,6 +332,7 @@
         <button type="button" id="btnPrestamoYoPresto" class="sel-egreso" onclick="seleccionarTipoPrestamo('yo_presto')">Yo presto</button>
         <button type="button" id="btnPrestamoMePrestan" onclick="seleccionarTipoPrestamo('me_prestan')">Me prestan</button>
         <button type="button" id="btnPrestamoInversion" onclick="seleccionarTipoPrestamo('inversion')">Inversión</button>
+        <button type="button" id="btnPrestamoCredito" onclick="seleccionarTipoPrestamo('credito')">Crédito (banco)</button>
       </div>
       <input type="hidden" id="prestamoTipo" value="yo_presto">
       <input type="hidden" id="prestamoVencimientoRaw">
@@ -551,7 +560,8 @@ const CATEGORIA_LABELS = {
   prestamo_recibido: 'Préstamo recibido', prestamo_otorgado: 'Préstamo otorgado',
   pago_prestamo: 'Pago de préstamo', cobro_prestamo: 'Cobro de préstamo',
   interes_prestamo: 'Interés de préstamo',
-  inversion_realizada: 'Inversión realizada', retorno_inversion: 'Retorno de inversión'
+  inversion_realizada: 'Inversión realizada', retorno_inversion: 'Retorno de inversión',
+  cuota_credito: 'Cuota de crédito'
 };
 
 // ===================== UTILIDADES DE FECHA =====================
@@ -572,6 +582,9 @@ function esDelMesActual(fechaStr){
   const hoy = new Date();
   const [y,m] = fechaStr.split('-').map(Number);
   return y === hoy.getFullYear() && m === (hoy.getMonth()+1);
+}
+function calcularEstadoPorFecha(fechaStr){
+  return fechaStr > hoyStr() ? 'programado' : 'confirmado';
 }
 function calcularRecordatorio(fechaVencStr){
   const hoy = parseFechaUTC(hoyStr());
@@ -696,16 +709,21 @@ function volver(){
 
 // ===================== RENDER: INICIO =====================
 function renderInicio(){
-  const saldo = movimientos.reduce((acc,m)=> acc + (m.tipo==='ingreso' ? Number(m.monto) : -Number(m.monto)), 0);
+  const confirmados = movimientos.filter(m=>m.estado!=='programado');
+  const saldo = confirmados.reduce((acc,m)=> acc + (m.tipo==='ingreso' ? Number(m.monto) : -Number(m.monto)), 0);
   document.getElementById('saldoTotal').textContent = formatMonto(saldo);
 
-  const delMes = movimientos.filter(m=>esDelMesActual(m.fecha));
+  const delMes = confirmados.filter(m=>esDelMesActual(m.fecha));
   const ingMes = delMes.filter(m=>m.tipo==='ingreso').reduce((a,m)=>a+Number(m.monto),0);
   const egrMes = delMes.filter(m=>m.tipo==='egreso').reduce((a,m)=>a+Number(m.monto),0);
   document.getElementById('ingresosMes').textContent = formatMonto(ingMes);
   document.getElementById('egresosMes').textContent = formatMonto(egrMes);
 
-  renderListaMovimientos(document.getElementById('listaInicioMov'), movimientos.slice(0,6));
+  renderListaMovimientos(document.getElementById('listaInicioMov'), confirmados.slice(0,6));
+
+  const proximos = movimientos.filter(m=>m.estado==='programado').sort((a,b)=>a.fecha.localeCompare(b.fecha)).slice(0,5);
+  document.getElementById('seccionProximos').style.display = proximos.length ? 'block' : 'none';
+  renderListaMovimientos(document.getElementById('listaProximos'), proximos);
 }
 
 // ===================== RENDER: MOVIMIENTOS =====================
@@ -716,23 +734,33 @@ function filtrarMovimientos(f){
   renderMovimientos();
 }
 function renderMovimientos(){
-  const lista = filtroMovActual==='todos' ? movimientos : movimientos.filter(m=>m.tipo===filtroMovActual);
+  let lista;
+  if(filtroMovActual === 'programados'){
+    lista = movimientos.filter(m=>m.estado==='programado').sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  } else {
+    const confirmados = movimientos.filter(m=>m.estado!=='programado');
+    lista = filtroMovActual==='todos' ? confirmados : confirmados.filter(m=>m.tipo===filtroMovActual);
+  }
   renderListaMovimientos(document.getElementById('listaMovimientos'), lista);
 }
 function renderListaMovimientos(cont, lista){
   if(!lista.length){ cont.innerHTML = '<div class="vacio">Sin movimientos todavía</div>'; return; }
-  cont.innerHTML = lista.map(m=>`
-    <div class="item-mov" onclick="abrirDetalleMovimiento('${m.id}')">
+  cont.innerHTML = lista.map(m=>{
+    const esProgramado = m.estado === 'programado';
+    const r = esProgramado ? calcularRecordatorio(m.fecha) : null;
+    return `
+    <div class="item-mov" onclick="abrirDetalleMovimiento('${m.id}')" style="${esProgramado ? 'opacity:.85; border:1px dashed ' + (r.urgente?'var(--rojo)':'var(--borde)') + ';' : ''}">
       <div class="icono ${m.tipo}">${m.tipo==='ingreso' ? '↓' : '↑'}</div>
       <div class="info">
         <div class="desc">${escapeHtml(m.descripcion || m.categoria)}</div>
-        <div class="meta">${formatFechaLegible(m.fecha)}</div>
+        <div class="meta">${esProgramado ? `📅 ${formatFechaLegible(m.fecha)} · ${r.texto}` : formatFechaLegible(m.fecha)}</div>
       </div>
       <div class="monto ${m.tipo}">${m.tipo==='ingreso'?'+':'-'}${formatMonto(m.monto)}</div>
       ${m.foto_url ? `<img class="foto-thumb" src="${m.foto_url}" onclick="event.stopPropagation(); abrirFoto('${m.foto_url}')">` : ''}
+      ${esProgramado ? `<button class="btn-eliminar" style="color:var(--verde);" onclick="event.stopPropagation(); confirmarMovimiento('${m.id}')" title="Confirmar">✓</button>` : ''}
       <button class="btn-eliminar" onclick="event.stopPropagation(); eliminarMovimiento('${m.id}')" title="Eliminar">🗑</button>
     </div>
-  `).join('');
+  `;}).join('');
 }
 
 // ===================== DETALLE MOVIMIENTO (modal) =====================
@@ -742,7 +770,10 @@ function abrirDetalleMovimiento(id){
   const p = m.prestamo_id ? prestamos.find(x=>x.id===m.prestamo_id) : null;
 
   let recordatorioHtml = '';
-  if(p && p.fecha_vencimiento && p.estado !== 'pagado'){
+  if(m.estado === 'programado'){
+    const r = calcularRecordatorio(m.fecha);
+    recordatorioHtml = `<div style="margin-top:10px; padding:8px 10px; border-radius:8px; background:${r.urgente ? 'var(--rojo-suave)' : '#eef1f8'}; color:${r.urgente ? 'var(--rojo)' : 'var(--texto-suave)'}; font-size:13px;">📅 Programado · ${r.texto}</div>`;
+  } else if(p && p.fecha_vencimiento && p.estado !== 'pagado'){
     const r = calcularRecordatorio(p.fecha_vencimiento);
     recordatorioHtml = `<div style="margin-top:10px; padding:8px 10px; border-radius:8px; background:${r.urgente ? 'var(--rojo-suave)' : '#eef1f8'}; color:${r.urgente ? 'var(--rojo)' : 'var(--texto-suave)'}; font-size:13px;">📅 ${r.texto}</div>`;
   }
@@ -758,6 +789,7 @@ function abrirDetalleMovimiento(id){
     ${recordatorioHtml}
     ${m.foto_url ? `<img src="${m.foto_url}" style="width:100%; border-radius:10px; margin-top:10px; cursor:pointer;" onclick="abrirFoto('${m.foto_url}')">` : ''}
     <div style="display:flex; gap:8px; margin-top:16px;">
+      ${m.estado==='programado' ? `<button class="btn" style="flex:1; background:var(--verde);" onclick="cerrarModal('modalDetalleMovimiento'); confirmarMovimiento('${m.id}');">✓ Confirmar</button>` : ''}
       <button class="btn btn-secundario" style="flex:1" onclick="abrirEdicionMovimiento('${m.id}')">✏️ Editar</button>
       <button class="btn btn-rojo" style="flex:1" onclick="cerrarModal('modalDetalleMovimiento'); eliminarMovimiento('${m.id}');">🗑 Eliminar</button>
     </div>
@@ -773,9 +805,11 @@ function renderPrestamos(){
   const yoPresto = prestamos.filter(p=>p.tipo==='yo_presto');
   const mePrestan = prestamos.filter(p=>p.tipo==='me_prestan');
   const inversion = prestamos.filter(p=>p.tipo==='inversion');
+  const credito = prestamos.filter(p=>p.tipo==='credito');
   document.getElementById('listaYoPresto').innerHTML = renderTarjetasPrestamo(yoPresto, 'deben');
   document.getElementById('listaMePrestan').innerHTML = renderTarjetasPrestamo(mePrestan, 'debo');
   document.getElementById('listaInversion').innerHTML = renderTarjetasPrestamo(inversion, 'inversion');
+  document.getElementById('listaCredito').innerHTML = renderTarjetasPrestamo(credito, 'debo');
 }
 function renderTarjetasPrestamo(lista, tagTipo){
   if(!lista.length) return '<div class="vacio">No hay registros</div>';
@@ -808,8 +842,9 @@ function mostrarDetallePrestamo(id){
   prestamoAccionActual = { prestamo: p };
   const esYoPresto = p.tipo === 'yo_presto';
   const esInversion = p.tipo === 'inversion';
+  const esCredito = p.tipo === 'credito';
   const tagClass = p.estado==='pagado' ? 'pagado' : (esYoPresto ? 'deben' : (esInversion ? 'inversion' : 'debo'));
-  const tagTxt = p.estado==='pagado' ? (esInversion ? 'Recuperado' : 'Pagado') : (esYoPresto ? 'Te debe' : (esInversion ? 'Invertido' : 'Le debes'));
+  const tagTxt = p.estado==='pagado' ? (esInversion ? 'Recuperado' : 'Pagado') : (esYoPresto ? 'Te debe' : (esInversion ? 'Invertido' : (esCredito ? 'Crédito' : 'Le debes')));
   const etiquetaAccion = esYoPresto ? 'Cobrar' : (esInversion ? 'Registrar retorno' : 'Pagar');
   const accionKey = esYoPresto ? 'cobro' : (esInversion ? 'retorno' : 'pago');
 
@@ -826,7 +861,8 @@ function mostrarDetallePrestamo(id){
     </div>
     ${p.fecha_vencimiento && p.estado!=='pagado' ? (r=>`<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:${r.urgente?'var(--rojo-suave)':'#eef1f8'}; color:${r.urgente?'var(--rojo)':'var(--texto-suave)'}; font-size:13px;">📅 ${r.texto}</div>`)(calcularRecordatorio(p.fecha_vencimiento)) : ''}
     ${p.notas ? `<div style="margin-top:8px; font-size:13px;">${escapeHtml(p.notas)}</div>` : ''}
-    ${p.estado!=='pagado' ? `
+    ${esCredito ? `<div style="margin-top:10px; font-size:13px; color:var(--texto-suave);">Las cuotas se confirman una por una abajo, en el historial, cuando realmente pagas cada una.</div>` : ''}
+    ${p.estado!=='pagado' && !esCredito ? `
       <div class="acciones-prestamo">
         <button class="btn" style="flex:1" onclick="abrirModalAccion('${p.id}','${accionKey}')">${etiquetaAccion}</button>
         ${esYoPresto ? `<button class="btn btn-secundario" style="flex:1" onclick="abrirModalAccion('${p.id}','interes')">+ Interés</button>` : ''}
@@ -862,7 +898,8 @@ async function eliminarMovimiento(id){
     }
     if(!confirm('¿Eliminar este movimiento?')) return;
     await client.from('movimientos').delete().eq('id', id);
-    if(p && (mov.categoria === 'pago_prestamo' || mov.categoria === 'cobro_prestamo' || mov.categoria === 'retorno_inversion')){
+    const esSaldoAfectante = mov.categoria === 'pago_prestamo' || mov.categoria === 'cobro_prestamo' || mov.categoria === 'retorno_inversion' || mov.categoria === 'cuota_credito';
+    if(p && esSaldoAfectante && mov.estado !== 'programado'){
       const nuevoSaldo = Number(p.saldo_pendiente) + Number(mov.monto);
       await client.from('prestamos').update({ saldo_pendiente: nuevoSaldo, estado: 'activo' }).eq('id', p.id);
     }
@@ -883,6 +920,28 @@ async function eliminarPrestamo(id, saltarConfirm){
   await client.from('prestamos').delete().eq('id', id);
   await cargarDatos();
   mostrarVista('prestamos', true);
+}
+
+async function confirmarMovimiento(id){
+  const mov = movimientos.find(m=>m.id===id);
+  if(!mov || mov.estado !== 'programado') return;
+  if(!confirm('¿Confirmar que este movimiento ya ocurrió?')) return;
+
+  await client.from('movimientos').update({ estado: 'confirmado' }).eq('id', id);
+
+  const esSaldoAfectante = mov.categoria === 'pago_prestamo' || mov.categoria === 'cobro_prestamo' || mov.categoria === 'retorno_inversion' || mov.categoria === 'cuota_credito';
+  if(mov.prestamo_id && esSaldoAfectante){
+    const p = prestamos.find(x=>x.id===mov.prestamo_id);
+    if(p){
+      const nuevoSaldo = Math.max(0, Number(p.saldo_pendiente) - Number(mov.monto));
+      await client.from('prestamos').update({ saldo_pendiente: nuevoSaldo, estado: nuevoSaldo===0 ? 'pagado' : 'activo' }).eq('id', p.id);
+    }
+  }
+
+  await cargarDatos();
+  if(document.getElementById('vistaDetallePrestamo').classList.contains('activa') && mov.prestamo_id){
+    mostrarDetallePrestamo(mov.prestamo_id);
+  }
 }
 
 // ===================== SUBIDA DE FOTO =====================
@@ -948,17 +1007,26 @@ async function guardarNuevoMovimiento(e){
     btn.disabled = true; btn.textContent = 'Guardando...';
     const original = movimientos.find(x=>x.id===movimientoEditandoId);
     const foto_url = fotoFile ? await subirFoto(fotoFile) : original.foto_url;
+    const nuevoEstado = calcularEstadoPorFecha(fecha);
     const { error } = await client.from('movimientos')
-      .update({ descripcion, monto, fecha, foto_url }).eq('id', movimientoEditandoId);
+      .update({ descripcion, monto, fecha, foto_url, estado: nuevoEstado }).eq('id', movimientoEditandoId);
     btn.disabled = false; btn.textContent = 'Guardar cambios';
     if(error){ alert(error.message); return; }
 
-    if(original.prestamo_id && (original.categoria === 'pago_prestamo' || original.categoria === 'cobro_prestamo')){
+    const esSaldoAfectante = original.prestamo_id && (original.categoria === 'pago_prestamo' || original.categoria === 'cobro_prestamo' || original.categoria === 'retorno_inversion' || original.categoria === 'cuota_credito');
+    if(esSaldoAfectante){
       const p = prestamos.find(x=>x.id===original.prestamo_id);
       if(p){
-        const delta = monto - Number(original.monto);
-        const nuevoSaldo = Math.max(0, Number(p.saldo_pendiente) - delta);
-        await client.from('prestamos').update({ saldo_pendiente: nuevoSaldo, estado: nuevoSaldo===0 ? 'pagado' : 'activo' }).eq('id', p.id);
+        let delta = 0; // cuanto restar al saldo_pendiente
+        const eraConfirmado = original.estado !== 'programado';
+        const esConfirmado = nuevoEstado !== 'programado';
+        if(eraConfirmado && esConfirmado) delta = monto - Number(original.monto);
+        else if(!eraConfirmado && esConfirmado) delta = monto;
+        else if(eraConfirmado && !esConfirmado) delta = -Number(original.monto);
+        if(delta !== 0){
+          const nuevoSaldo = Math.max(0, Number(p.saldo_pendiente) - delta);
+          await client.from('prestamos').update({ saldo_pendiente: nuevoSaldo, estado: nuevoSaldo===0 ? 'pagado' : 'activo' }).eq('id', p.id);
+        }
       }
     }
 
@@ -973,7 +1041,7 @@ async function guardarNuevoMovimiento(e){
 
   const { data: mov, error } = await client.from('movimientos').insert({
     tipo, categoria: tipo==='ingreso' ? 'otro_ingreso' : 'gasto',
-    descripcion, monto, fecha, foto_url
+    descripcion, monto, fecha, foto_url, estado: calcularEstadoPorFecha(fecha)
   }).select().single();
 
   if(error){ btn.disabled=false; btn.textContent='Guardar'; alert(error.message); return; }
@@ -992,7 +1060,7 @@ async function guardarNuevoMovimiento(e){
         await client.from('movimientos').insert({
           tipo:'ingreso', categoria:'prestamo_recibido',
           descripcion: `Préstamo de ${apoyoContraparte} para ${descripcion}`,
-          monto: apoyoMonto, fecha, prestamo_id: prestamo.id
+          monto: apoyoMonto, fecha, prestamo_id: prestamo.id, estado: calcularEstadoPorFecha(fecha)
         });
       }
     }
@@ -1012,7 +1080,8 @@ function abrirModalNuevoPrestamo(){
 const LABELS_CONTRAPARTE = {
   yo_presto: '¿A quién le prestas? (ej. Juan)',
   me_prestan: '¿Quién te presta? (ej. Esposa)',
-  inversion: '¿En qué o con quién inviertes?'
+  inversion: '¿En qué o con quién inviertes?',
+  credito: '¿Con qué banco o entidad?'
 };
 
 function seleccionarTipoPrestamo(tipo){
@@ -1020,11 +1089,12 @@ function seleccionarTipoPrestamo(tipo){
   document.getElementById('btnPrestamoYoPresto').className = tipo==='yo_presto' ? 'sel-egreso' : '';
   document.getElementById('btnPrestamoMePrestan').className = tipo==='me_prestan' ? 'sel-ingreso' : '';
   document.getElementById('btnPrestamoInversion').className = tipo==='inversion' ? 'sel-egreso' : '';
+  document.getElementById('btnPrestamoCredito').className = tipo==='credito' ? 'sel-ingreso' : '';
   document.getElementById('labelContraparte').textContent = LABELS_CONTRAPARTE[tipo];
-  const esYoPresto = tipo === 'yo_presto';
-  document.getElementById('bloqueInteres').style.display = esYoPresto ? 'block' : 'none';
-  document.getElementById('bloqueVencimiento').style.display = esYoPresto ? 'block' : 'none';
-  if(esYoPresto) seleccionarMetodoInteres('lineal');
+  const usaInteres = tipo === 'yo_presto' || tipo === 'credito';
+  document.getElementById('bloqueInteres').style.display = usaInteres ? 'block' : 'none';
+  document.getElementById('bloqueVencimiento').style.display = usaInteres ? 'block' : 'none';
+  if(usaInteres) seleccionarMetodoInteres(tipo==='credito' ? 'frances' : 'lineal');
 }
 function seleccionarMetodoInteres(metodo){
   document.getElementById('prestamoMetodo').value = metodo;
@@ -1099,12 +1169,12 @@ async function guardarNuevoPrestamo(e){
   const fotoFile = document.getElementById('prestamoFoto').files[0];
   const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
 
-  const esYoPresto = tipo === 'yo_presto';
-  const metodo_interes = esYoPresto ? document.getElementById('prestamoMetodo').value : null;
-  const tasa_interes = esYoPresto ? (parseFloat(document.getElementById('prestamoTasa').value) || 0) : null;
+  const usaInteres = tipo === 'yo_presto' || tipo === 'credito';
+  const metodo_interes = usaInteres ? document.getElementById('prestamoMetodo').value : null;
+  const tasa_interes = usaInteres ? (parseFloat(document.getElementById('prestamoTasa').value) || 0) : null;
 
   let interes = 0, plazo_tipo = null, plazo_cantidad = null, fecha_vencimiento = null, cuota_mensual = null;
-  if(esYoPresto){
+  if(usaInteres){
     fecha_vencimiento = document.getElementById('prestamoVencimientoRaw').value || null;
     if(metodo_interes === 'frances'){
       plazo_tipo = 'mensual';
@@ -1126,15 +1196,42 @@ async function guardarNuevoPrestamo(e){
 
   if(error){ btn.disabled=false; btn.textContent='Guardar'; alert(error.message); return; }
 
-  const esIngreso = tipo === 'me_prestan';
-  const categoriaFundacional = tipo === 'me_prestan' ? 'prestamo_recibido' : (tipo === 'inversion' ? 'inversion_realizada' : 'prestamo_otorgado');
-  const descFundacional = tipo === 'me_prestan' ? `Préstamo de ${contraparte}` : (tipo === 'inversion' ? `Inversión en ${contraparte}` : `Préstamo a ${contraparte}`);
-  await client.from('movimientos').insert({
-    tipo: esIngreso ? 'ingreso' : 'egreso',
-    categoria: categoriaFundacional,
-    descripcion: descFundacional,
-    monto, fecha, foto_url, prestamo_id: prestamo.id
-  });
+  if(tipo === 'credito'){
+    // Un credito no registra ingreso de desembolso: solo genera el cronograma de cuotas futuras
+    const cuotas = [];
+    if(metodo_interes === 'frances' && plazo_cantidad){
+      for(let k=1; k<=plazo_cantidad; k++){
+        const fechaCuota = sumarMeses(fecha, k);
+        cuotas.push({ numero:k, fecha: fechaCuota, monto: cuota_mensual });
+      }
+    } else if(fecha_vencimiento){
+      cuotas.push({ numero:1, fecha: fecha_vencimiento, monto: saldoInicial });
+    }
+    let saldoAConfirmarYa = 0;
+    for(const c of cuotas){
+      const estadoCuota = calcularEstadoPorFecha(c.fecha);
+      if(estadoCuota === 'confirmado') saldoAConfirmarYa += c.monto;
+      await client.from('movimientos').insert({
+        tipo:'egreso', categoria:'cuota_credito',
+        descripcion: `Cuota ${c.numero}/${cuotas.length} — ${contraparte}`,
+        monto: c.monto, fecha: c.fecha, prestamo_id: prestamo.id, estado: estadoCuota
+      });
+    }
+    if(saldoAConfirmarYa > 0){
+      const nuevoSaldo = Math.max(0, saldoInicial - saldoAConfirmarYa);
+      await client.from('prestamos').update({ saldo_pendiente: nuevoSaldo, estado: nuevoSaldo===0 ? 'pagado' : 'activo' }).eq('id', prestamo.id);
+    }
+  } else {
+    const esIngreso = tipo === 'me_prestan';
+    const categoriaFundacional = tipo === 'me_prestan' ? 'prestamo_recibido' : (tipo === 'inversion' ? 'inversion_realizada' : 'prestamo_otorgado');
+    const descFundacional = tipo === 'me_prestan' ? `Préstamo de ${contraparte}` : (tipo === 'inversion' ? `Inversión en ${contraparte}` : `Préstamo a ${contraparte}`);
+    await client.from('movimientos').insert({
+      tipo: esIngreso ? 'ingreso' : 'egreso',
+      categoria: categoriaFundacional,
+      descripcion: descFundacional,
+      monto, fecha, foto_url, prestamo_id: prestamo.id, estado: calcularEstadoPorFecha(fecha)
+    });
+  }
 
   btn.disabled = false; btn.textContent = 'Guardar';
   cerrarModal('modalNuevoPrestamo');
