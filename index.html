@@ -301,22 +301,6 @@
         <input type="file" accept="image/*" id="movFoto" onchange="previsualizarFoto(this,'movFotoPreview')">
         <img class="foto-preview" id="movFotoPreview">
       </div>
-      <div class="campo" id="bloqueApoyo" style="display:none;">
-        <label style="display:flex; align-items:center; gap:6px; font-size:14px; color:var(--texto);">
-          <input type="checkbox" id="movTieneApoyo" onchange="toggleApoyo()" style="width:auto;">
-          ¿Alguien te apoyó con parte de este pago? (se registra como préstamo)
-        </label>
-        <div id="camposApoyo" style="display:none; margin-top:10px;">
-          <div class="campo">
-            <label>¿Quién apoyó?</label>
-            <input type="text" id="apoyoContraparte" placeholder="Ej: Martha">
-          </div>
-          <div class="campo">
-            <label>Monto del apoyo (S/)</label>
-            <input type="number" step="0.01" min="0.01" id="apoyoMonto">
-          </div>
-        </div>
-      </div>
       <button type="submit" class="btn" id="btnGuardarMov">Guardar</button>
     </form>
   </div>
@@ -429,6 +413,30 @@
 <div class="modal-overlay" id="modalFoto" onclick="cerrarModal('modalFoto')">
   <button class="modal-cerrar">✕</button>
   <img id="fotoGrande" src="">
+</div>
+
+<!-- ============ MODAL: PREGUNTA DE APOYO ============ -->
+<div class="modal-overlay" id="modalPreguntaApoyo">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalPreguntaApoyo')">✕</button>
+    <h3>¿Alguien te apoyó con este pago?</h3>
+    <p style="color:var(--texto-suave); font-size:14px; margin-top:-10px;">Si alguien puso parte del dinero (ej. tu esposa), lo registro como préstamo pendiente.</p>
+    <form id="formPreguntaApoyo">
+      <input type="hidden" id="apoyoMovId">
+      <div class="campo">
+        <label>¿Quién apoyó?</label>
+        <input type="text" id="apoyoContraparte2" placeholder="Ej: Martha">
+      </div>
+      <div class="campo">
+        <label>Monto del apoyo (S/)</label>
+        <input type="number" step="0.01" min="0.01" id="apoyoMonto2">
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn btn-secundario" style="flex:1" onclick="cerrarModal('modalPreguntaApoyo')">No, fue todo mío</button>
+        <button type="submit" class="btn" style="flex:1">Sí, registrar</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <!-- ============ MODAL: DETALLE MOVIMIENTO ============ -->
@@ -619,7 +627,6 @@ function cerrarModal(id){
   document.getElementById(id).classList.remove('activo');
   if(id === 'modalNuevoMovimiento'){
     document.getElementById('formNuevoMovimiento').reset();
-    document.getElementById('camposApoyo').style.display = 'none';
     movimientoEditandoId = null;
     document.querySelector('#modalNuevoMovimiento h3').textContent = 'Nuevo movimiento';
     document.getElementById('btnGuardarMov').textContent = 'Guardar';
@@ -633,6 +640,7 @@ function cerrarModal(id){
     document.getElementById('editHintFrances').style.display = 'none';
   }
   if(id === 'modalConvertirInversion') document.getElementById('formConvertirInversion').reset();
+  if(id === 'modalPreguntaApoyo') document.getElementById('formPreguntaApoyo').reset();
   ['movFotoPreview','prestamoFotoPreview','accionFotoPreview'].forEach(p=>{
     const el = document.getElementById(p);
     if(el){ el.style.display='none'; el.src=''; }
@@ -942,6 +950,11 @@ async function confirmarMovimiento(id){
   if(document.getElementById('vistaDetallePrestamo').classList.contains('activa') && mov.prestamo_id){
     mostrarDetallePrestamo(mov.prestamo_id);
   }
+
+  // Recién al confirmarse (el día real del pago) tiene sentido preguntar si alguien apoyó
+  if(mov.tipo === 'egreso' && !mov.prestamo_id){
+    preguntarApoyo(mov);
+  }
 }
 
 // ===================== SUBIDA DE FOTO =====================
@@ -965,15 +978,6 @@ function seleccionarTipoMov(tipo){
   document.getElementById('movTipo').value = tipo;
   document.getElementById('btnTipoIngreso').className = tipo==='ingreso' ? 'sel-ingreso' : '';
   document.getElementById('btnTipoEgreso').className = tipo==='egreso' ? 'sel-egreso' : '';
-  document.getElementById('bloqueApoyo').style.display = tipo==='egreso' ? 'block' : 'none';
-  if(tipo!=='egreso'){
-    document.getElementById('movTieneApoyo').checked = false;
-    toggleApoyo();
-  }
-}
-function toggleApoyo(){
-  const marcado = document.getElementById('movTieneApoyo').checked;
-  document.getElementById('camposApoyo').style.display = marcado ? 'block' : 'none';
 }
 function abrirEdicionMovimiento(id){
   const m = movimientos.find(x=>x.id===id);
@@ -985,7 +989,6 @@ function abrirEdicionMovimiento(id){
   seleccionarTipoMov(m.tipo);
   document.getElementById('btnTipoIngreso').disabled = true;
   document.getElementById('btnTipoEgreso').disabled = true;
-  document.getElementById('bloqueApoyo').style.display = 'none';
   document.getElementById('movMonto').value = m.monto;
   document.getElementById('movDescripcion').value = m.descripcion || '';
   document.getElementById('movFecha').value = m.fecha;
@@ -1046,28 +1049,45 @@ async function guardarNuevoMovimiento(e){
 
   if(error){ btn.disabled=false; btn.textContent='Guardar'; alert(error.message); return; }
 
-  // Si es un egreso con apoyo de alguien más, ese apoyo queda como préstamo pendiente
-  if(tipo==='egreso' && document.getElementById('movTieneApoyo').checked){
-    const apoyoContraparte = document.getElementById('apoyoContraparte').value.trim();
-    const apoyoMonto = parseFloat(document.getElementById('apoyoMonto').value);
-    if(apoyoContraparte && apoyoMonto > 0){
-      const { data: prestamo, error: e2 } = await client.from('prestamos').insert({
-        tipo: 'me_prestan', contraparte: apoyoContraparte,
-        monto_inicial: apoyoMonto, saldo_pendiente: apoyoMonto, fecha_inicio: fecha,
-        notas: `Apoyo para: ${descripcion}`
-      }).select().single();
-      if(!e2){
-        await client.from('movimientos').insert({
-          tipo:'ingreso', categoria:'prestamo_recibido',
-          descripcion: `Préstamo de ${apoyoContraparte} para ${descripcion}`,
-          monto: apoyoMonto, fecha, prestamo_id: prestamo.id, estado: calcularEstadoPorFecha(fecha)
-        });
-      }
-    }
-  }
-
   btn.disabled = false; btn.textContent = 'Guardar';
   cerrarModal('modalNuevoMovimiento');
+  await cargarDatos();
+
+  // Si el egreso ya se confirma hoy, recién ahí tiene sentido preguntar si alguien apoyó
+  if(mov.tipo === 'egreso' && mov.estado === 'confirmado'){
+    preguntarApoyo(mov);
+  }
+}
+
+// ===================== PREGUNTA DE APOYO (al confirmarse un egreso) =====================
+function preguntarApoyo(mov){
+  document.getElementById('apoyoMovId').value = mov.id;
+  window.apoyoMovDescripcion = mov.descripcion || mov.categoria;
+  window.apoyoMovFecha = mov.fecha;
+  abrirModal('modalPreguntaApoyo');
+}
+async function guardarPreguntaApoyo(e){
+  e.preventDefault();
+  const contraparte = document.getElementById('apoyoContraparte2').value.trim();
+  const monto = parseFloat(document.getElementById('apoyoMonto2').value);
+  cerrarModal('modalPreguntaApoyo');
+  if(!contraparte || !(monto > 0)) return;
+
+  const descripcion = window.apoyoMovDescripcion || '';
+  const fecha = window.apoyoMovFecha || hoyStr();
+
+  const { data: prestamo, error } = await client.from('prestamos').insert({
+    tipo: 'me_prestan', contraparte, monto_inicial: monto, saldo_pendiente: monto, fecha_inicio: fecha,
+    notas: `Apoyo para: ${descripcion}`
+  }).select().single();
+  if(error){ alert(error.message); return; }
+
+  await client.from('movimientos').insert({
+    tipo:'ingreso', categoria:'prestamo_recibido',
+    descripcion: `Préstamo de ${contraparte} para ${descripcion}`,
+    monto, fecha, prestamo_id: prestamo.id, estado: calcularEstadoPorFecha(fecha)
+  });
+
   await cargarDatos();
 }
 
@@ -1454,6 +1474,7 @@ document.getElementById('formNuevoPrestamo').addEventListener('submit', guardarN
 document.getElementById('formAccionPrestamo').addEventListener('submit', guardarAccionPrestamo);
 document.getElementById('formEditarPrestamo').addEventListener('submit', guardarEdicionPrestamo);
 document.getElementById('formConvertirInversion').addEventListener('submit', guardarConversionInversion);
+document.getElementById('formPreguntaApoyo').addEventListener('submit', guardarPreguntaApoyo);
 
 revisarSesion();
 </script>
