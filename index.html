@@ -262,6 +262,33 @@
       <div id="listaHistorialPrestamo"></div>
     </div>
 
+    <!-- ---- NEGOCIO ---- -->
+    <div class="vista" id="vistaNegocio">
+      <div class="resumen-grid">
+        <div class="card wide">
+          <div class="etiqueta">Saldo del negocio</div>
+          <div class="valor azul" id="saldoNegocio">S/ 0.00</div>
+        </div>
+        <div class="card">
+          <div class="etiqueta">Ingresos del mes</div>
+          <div class="valor verde" id="ingresosNegocioMes">S/ 0.00</div>
+        </div>
+        <div class="card">
+          <div class="etiqueta">Egresos del mes</div>
+          <div class="valor rojo" id="egresosNegocioMes">S/ 0.00</div>
+        </div>
+      </div>
+      <div class="seccion-titulo">Eventos</div>
+      <div id="listaEventos"></div>
+    </div>
+
+    <!-- ---- DETALLE EVENTO ---- -->
+    <div class="vista" id="vistaDetalleEvento">
+      <div class="detalle-header" id="detalleEventoHeader"></div>
+      <div class="seccion-titulo">Movimientos del evento</div>
+      <div id="listaHistorialEvento"></div>
+    </div>
+
   </div>
 
   <button class="fab" id="fabNuevo" onclick="abrirModalNuevoMovimiento()">+</button>
@@ -270,6 +297,7 @@
     <button class="activo" data-vista="inicio" onclick="mostrarVista('inicio', true)"><span class="ico">🏠</span>Inicio</button>
     <button data-vista="movimientos" onclick="mostrarVista('movimientos', true)"><span class="ico">📋</span>Movimientos</button>
     <button data-vista="prestamos" onclick="mostrarVista('prestamos', true)"><span class="ico">🤝</span>Préstamos</button>
+    <button data-vista="negocio" onclick="mostrarVista('negocio', true)"><span class="ico">🔊</span>Negocio</button>
   </nav>
 </div>
 
@@ -284,6 +312,8 @@
         <button type="button" id="btnTipoEgreso" onclick="seleccionarTipoMov('egreso')">↑ Egreso</button>
       </div>
       <input type="hidden" id="movTipo" value="ingreso">
+      <input type="hidden" id="movContexto" value="personal">
+      <input type="hidden" id="movEventoId" value="">
       <div class="campo">
         <label>Monto (S/)</label>
         <input type="number" step="0.01" min="0.01" id="movMonto" required>
@@ -413,6 +443,61 @@
 <div class="modal-overlay" id="modalFoto" onclick="cerrarModal('modalFoto')">
   <button class="modal-cerrar">✕</button>
   <img id="fotoGrande" src="">
+</div>
+
+<!-- ============ MODAL: NUEVO EVENTO ============ -->
+<div class="modal-overlay" id="modalNuevoEvento">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalNuevoEvento')">✕</button>
+    <h3>Nuevo evento</h3>
+    <form id="formNuevoEvento">
+      <div class="campo">
+        <label>Nombre del evento</label>
+        <input type="text" id="eventoNombre" placeholder="Ej: Evento B, Cumpleaños Juan" required>
+      </div>
+      <div class="campo">
+        <label>Lugar (opcional)</label>
+        <input type="text" id="eventoLugar" placeholder="Ej: Local Los Pinos">
+      </div>
+      <div class="campo">
+        <label>Fecha</label>
+        <input type="date" id="eventoFecha" required>
+      </div>
+      <div class="campo">
+        <label>Notas (opcional)</label>
+        <textarea id="eventoNotas" rows="2"></textarea>
+      </div>
+      <button type="submit" class="btn">Guardar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ MODAL: EDITAR EVENTO ============ -->
+<div class="modal-overlay" id="modalEditarEvento">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalEditarEvento')">✕</button>
+    <h3>Editar evento</h3>
+    <form id="formEditarEvento">
+      <input type="hidden" id="editEventoId">
+      <div class="campo">
+        <label>Nombre del evento</label>
+        <input type="text" id="editEventoNombre" required>
+      </div>
+      <div class="campo">
+        <label>Lugar (opcional)</label>
+        <input type="text" id="editEventoLugar">
+      </div>
+      <div class="campo">
+        <label>Fecha</label>
+        <input type="date" id="editEventoFecha" required>
+      </div>
+      <div class="campo">
+        <label>Notas (opcional)</label>
+        <textarea id="editEventoNotas" rows="2"></textarea>
+      </div>
+      <button type="submit" class="btn">Guardar cambios</button>
+    </form>
+  </div>
 </div>
 
 <!-- ============ MODAL: PREGUNTA DE APOYO ============ -->
@@ -558,6 +643,7 @@ const client = supabase.createClient(SB_URL, SB_KEY);
 let sesion = null;
 let movimientos = [];
 let prestamos = [];
+let eventos = [];
 let filtroMovActual = 'todos';
 let pilaVistas = ['inicio'];
 let prestamoAccionActual = null; // { prestamo, accion }
@@ -569,7 +655,8 @@ const CATEGORIA_LABELS = {
   pago_prestamo: 'Pago de préstamo', cobro_prestamo: 'Cobro de préstamo',
   interes_prestamo: 'Interés de préstamo',
   inversion_realizada: 'Inversión realizada', retorno_inversion: 'Retorno de inversión',
-  cuota_credito: 'Cuota de crédito'
+  cuota_credito: 'Cuota de crédito',
+  ingreso_evento: 'Ingreso de evento', gasto_evento: 'Gasto de evento'
 };
 
 // ===================== UTILIDADES DE FECHA =====================
@@ -641,6 +728,8 @@ function cerrarModal(id){
   }
   if(id === 'modalConvertirInversion') document.getElementById('formConvertirInversion').reset();
   if(id === 'modalPreguntaApoyo') document.getElementById('formPreguntaApoyo').reset();
+  if(id === 'modalNuevoEvento') document.getElementById('formNuevoEvento').reset();
+  if(id === 'modalEditarEvento') document.getElementById('formEditarEvento').reset();
   ['movFotoPreview','prestamoFotoPreview','accionFotoPreview'].forEach(p=>{
     const el = document.getElementById(p);
     if(el){ el.style.display='none'; el.src=''; }
@@ -678,23 +767,26 @@ async function iniciarApp(){
 
 // ===================== CARGA DE DATOS =====================
 async function cargarDatos(){
-  const [{ data: movs, error: e1 }, { data: prest, error: e2 }] = await Promise.all([
+  const [{ data: movs, error: e1 }, { data: prest, error: e2 }, { data: evs, error: e3 }] = await Promise.all([
     client.from('movimientos').select('*').order('fecha', { ascending:false }).order('created_at', { ascending:false }).limit(300),
-    client.from('prestamos').select('*').order('created_at', { ascending:false })
+    client.from('prestamos').select('*').order('created_at', { ascending:false }),
+    client.from('eventos').select('*').order('fecha', { ascending:false })
   ]);
-  if(e1) console.error(e1); if(e2) console.error(e2);
+  if(e1) console.error(e1); if(e2) console.error(e2); if(e3) console.error(e3);
   movimientos = movs || [];
   prestamos = prest || [];
+  eventos = evs || [];
   renderInicio();
   renderMovimientos();
   renderPrestamos();
+  renderNegocio();
 }
 
 // ===================== NAVEGACION =====================
-const TITULOS = { inicio:'Inicio', movimientos:'Movimientos', prestamos:'Préstamos', detallePrestamo:'Préstamo' };
+const TITULOS = { inicio:'Inicio', movimientos:'Movimientos', prestamos:'Préstamos', detallePrestamo:'Préstamo', negocio:'Negocio', detalleEvento:'Evento' };
 function mostrarVista(nombre, esPrincipal){
   document.querySelectorAll('.vista').forEach(v=>v.classList.remove('activa'));
-  const mapId = { inicio:'vistaInicio', movimientos:'vistaMovimientos', prestamos:'vistaPrestamos', detallePrestamo:'vistaDetallePrestamo' };
+  const mapId = { inicio:'vistaInicio', movimientos:'vistaMovimientos', prestamos:'vistaPrestamos', detallePrestamo:'vistaDetallePrestamo', negocio:'vistaNegocio', detalleEvento:'vistaDetalleEvento' };
   document.getElementById(mapId[nombre]).classList.add('activa');
   document.getElementById('tituloHeader').textContent = TITULOS[nombre];
 
@@ -702,9 +794,10 @@ function mostrarVista(nombre, esPrincipal){
   const navBtn = document.querySelector(`nav.bottom-nav button[data-vista="${nombre}"]`);
   if(navBtn) navBtn.classList.add('activo');
 
-  document.getElementById('btnVolver').style.display = (nombre==='detallePrestamo') ? 'inline-block' : 'none';
-  document.getElementById('fabNuevo').style.display = (nombre==='detallePrestamo') ? 'none' : 'flex';
-  document.getElementById('fabNuevo').onclick = (nombre==='prestamos') ? abrirModalNuevoPrestamo : abrirModalNuevoMovimiento;
+  const esDetalle = nombre==='detallePrestamo' || nombre==='detalleEvento';
+  document.getElementById('btnVolver').style.display = esDetalle ? 'inline-block' : 'none';
+  document.getElementById('fabNuevo').style.display = esDetalle ? 'none' : 'flex';
+  document.getElementById('fabNuevo').onclick = nombre==='prestamos' ? abrirModalNuevoPrestamo : (nombre==='negocio' ? abrirModalNuevoEvento : abrirModalNuevoMovimiento);
 
   if(esPrincipal){ pilaVistas = [nombre]; }
   else { pilaVistas.push(nombre); }
@@ -717,7 +810,8 @@ function volver(){
 
 // ===================== RENDER: INICIO =====================
 function renderInicio(){
-  const confirmados = movimientos.filter(m=>m.estado!=='programado');
+  const personales = movimientos.filter(m=>m.contexto!=='negocio');
+  const confirmados = personales.filter(m=>m.estado!=='programado');
   const saldo = confirmados.reduce((acc,m)=> acc + (m.tipo==='ingreso' ? Number(m.monto) : -Number(m.monto)), 0);
   document.getElementById('saldoTotal').textContent = formatMonto(saldo);
 
@@ -729,9 +823,46 @@ function renderInicio(){
 
   renderListaMovimientos(document.getElementById('listaInicioMov'), confirmados.slice(0,6));
 
-  const proximos = movimientos.filter(m=>m.estado==='programado').sort((a,b)=>a.fecha.localeCompare(b.fecha)).slice(0,5);
+  const proximos = personales.filter(m=>m.estado==='programado').sort((a,b)=>a.fecha.localeCompare(b.fecha)).slice(0,5);
   document.getElementById('seccionProximos').style.display = proximos.length ? 'block' : 'none';
   renderListaMovimientos(document.getElementById('listaProximos'), proximos);
+}
+
+// ===================== RENDER: NEGOCIO =====================
+function renderNegocio(){
+  const negocio = movimientos.filter(m=>m.contexto==='negocio' && m.estado!=='programado');
+  const saldo = negocio.reduce((acc,m)=> acc + (m.tipo==='ingreso' ? Number(m.monto) : -Number(m.monto)), 0);
+  document.getElementById('saldoNegocio').textContent = formatMonto(saldo);
+
+  const delMes = negocio.filter(m=>esDelMesActual(m.fecha));
+  const ingMes = delMes.filter(m=>m.tipo==='ingreso').reduce((a,m)=>a+Number(m.monto),0);
+  const egrMes = delMes.filter(m=>m.tipo==='egreso').reduce((a,m)=>a+Number(m.monto),0);
+  document.getElementById('ingresosNegocioMes').textContent = formatMonto(ingMes);
+  document.getElementById('egresosNegocioMes').textContent = formatMonto(egrMes);
+
+  const cont = document.getElementById('listaEventos');
+  if(!eventos.length){ cont.innerHTML = '<div class="vacio">Sin eventos todavía</div>'; return; }
+  cont.innerHTML = eventos.map(ev=>{
+    const movs = movimientos.filter(m=>m.evento_id===ev.id && m.estado!=='programado');
+    const ing = movs.filter(m=>m.tipo==='ingreso').reduce((a,m)=>a+Number(m.monto),0);
+    const egr = movs.filter(m=>m.tipo==='egreso').reduce((a,m)=>a+Number(m.monto),0);
+    const saldoEv = ing - egr;
+    return `
+      <div class="prestamo-card" onclick="mostrarDetalleEvento('${ev.id}')">
+        <div class="fila-top">
+          <span class="contraparte">${escapeHtml(ev.nombre)}</span>
+          <span class="tag ${saldoEv>=0 ? 'deben' : 'debo'}">${formatMonto(saldoEv)}</span>
+        </div>
+        <div class="saldo-row">
+          <span>${ev.lugar ? escapeHtml(ev.lugar) + ' · ' : ''}${formatFechaLegible(ev.fecha)}</span>
+        </div>
+        <div class="saldo-row">
+          <span style="color:var(--verde);">+${formatMonto(ing)}</span>
+          <span style="color:var(--rojo);">-${formatMonto(egr)}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // ===================== RENDER: MOVIMIENTOS =====================
@@ -742,11 +873,12 @@ function filtrarMovimientos(f){
   renderMovimientos();
 }
 function renderMovimientos(){
+  const personales = movimientos.filter(m=>m.contexto!=='negocio');
   let lista;
   if(filtroMovActual === 'programados'){
-    lista = movimientos.filter(m=>m.estado==='programado').sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    lista = personales.filter(m=>m.estado==='programado').sort((a,b)=>a.fecha.localeCompare(b.fecha));
   } else {
-    const confirmados = movimientos.filter(m=>m.estado!=='programado');
+    const confirmados = personales.filter(m=>m.estado!=='programado');
     lista = filtroMovActual==='todos' ? confirmados : confirmados.filter(m=>m.tipo===filtroMovActual);
   }
   renderListaMovimientos(document.getElementById('listaMovimientos'), lista);
@@ -776,6 +908,7 @@ function abrirDetalleMovimiento(id){
   const m = movimientos.find(x=>x.id===id);
   if(!m) return;
   const p = m.prestamo_id ? prestamos.find(x=>x.id===m.prestamo_id) : null;
+  const ev = m.evento_id ? eventos.find(x=>x.id===m.evento_id) : null;
 
   let recordatorioHtml = '';
   if(m.estado === 'programado'){
@@ -794,6 +927,7 @@ function abrirDetalleMovimiento(id){
     <div class="campo"><label>Descripción</label><div>${escapeHtml(m.descripcion || '-')}</div></div>
     <div class="campo"><label>Fecha</label><div>${formatFechaLegible(m.fecha)}</div></div>
     ${p ? `<div class="campo"><label>Préstamo relacionado</label><div>${escapeHtml(p.contraparte)} · saldo ${formatMonto(p.saldo_pendiente)}</div></div>` : ''}
+    ${ev ? `<div class="campo"><label>Evento</label><div>${escapeHtml(ev.nombre)}</div></div>` : ''}
     ${recordatorioHtml}
     ${m.foto_url ? `<img src="${m.foto_url}" style="width:100%; border-radius:10px; margin-top:10px; cursor:pointer;" onclick="abrirFoto('${m.foto_url}')">` : ''}
     <div style="display:flex; gap:8px; margin-top:16px;">
@@ -806,6 +940,102 @@ function abrirDetalleMovimiento(id){
 }
 function escapeHtml(str){
   const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML;
+}
+
+// ===================== DETALLE EVENTO (negocio) =====================
+function mostrarDetalleEvento(id){
+  const ev = eventos.find(x=>x.id===id);
+  if(!ev) return;
+  const movs = movimientos.filter(m=>m.evento_id===ev.id && m.estado!=='programado');
+  const ing = movs.filter(m=>m.tipo==='ingreso').reduce((a,m)=>a+Number(m.monto),0);
+  const egr = movs.filter(m=>m.tipo==='egreso').reduce((a,m)=>a+Number(m.monto),0);
+  const saldoEv = ing - egr;
+
+  document.getElementById('detalleEventoHeader').innerHTML = `
+    <div class="fila-top">
+      <span class="contraparte">${escapeHtml(ev.nombre)}</span>
+      <span class="tag ${saldoEv>=0 ? 'deben' : 'debo'}">${formatMonto(saldoEv)}</span>
+    </div>
+    <div style="color:var(--texto-suave); font-size:13px;">
+      ${ev.lugar ? escapeHtml(ev.lugar) + ' · ' : ''}${formatFechaLegible(ev.fecha)}
+    </div>
+    <div class="saldo-row" style="margin-top:8px;">
+      <span style="color:var(--verde);">Ingresos: ${formatMonto(ing)}</span>
+      <span style="color:var(--rojo);">Egresos: ${formatMonto(egr)}</span>
+    </div>
+    ${ev.notas ? `<div style="margin-top:8px; font-size:13px;">${escapeHtml(ev.notas)}</div>` : ''}
+    <div class="acciones-prestamo">
+      <button class="btn" style="flex:1; background:var(--verde);" onclick="abrirModalNuevoMovimientoEvento('${ev.id}','ingreso')">+ Ingreso</button>
+      <button class="btn" style="flex:1; background:var(--rojo);" onclick="abrirModalNuevoMovimientoEvento('${ev.id}','egreso')">+ Gasto</button>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button style="flex:1; background:none; border:1px solid var(--borde); color:var(--azul); font-size:13px; padding:8px; border-radius:8px;" onclick="abrirModalEditarEvento('${ev.id}')">✏️ Editar</button>
+      <button style="flex:1; background:none; border:1px solid var(--borde); color:var(--rojo); font-size:13px; padding:8px; border-radius:8px;" onclick="eliminarEvento('${ev.id}')">🗑 Eliminar</button>
+    </div>
+  `;
+
+  const historial = movimientos.filter(m=>m.evento_id===ev.id);
+  renderListaMovimientos(document.getElementById('listaHistorialEvento'), historial);
+
+  mostrarVista('detalleEvento');
+}
+
+function abrirModalNuevoMovimientoEvento(eventoId, tipoPreset){
+  document.getElementById('movFecha').value = hoyStr();
+  seleccionarTipoMov(tipoPreset);
+  document.getElementById('movContexto').value = 'negocio';
+  document.getElementById('movEventoId').value = eventoId;
+  abrirModal('modalNuevoMovimiento');
+}
+
+function abrirModalNuevoEvento(){
+  document.getElementById('eventoFecha').value = hoyStr();
+  abrirModal('modalNuevoEvento');
+}
+async function guardarNuevoEvento(e){
+  e.preventDefault();
+  const nombre = document.getElementById('eventoNombre').value.trim();
+  const lugar = document.getElementById('eventoLugar').value.trim();
+  const fecha = document.getElementById('eventoFecha').value;
+  const notas = document.getElementById('eventoNotas').value.trim();
+
+  const { error } = await client.from('eventos').insert({ nombre, lugar, fecha, notas });
+  if(error){ alert(error.message); return; }
+  cerrarModal('modalNuevoEvento');
+  await cargarDatos();
+  mostrarVista('negocio', true);
+}
+
+function abrirModalEditarEvento(id){
+  const ev = eventos.find(x=>x.id===id);
+  if(!ev) return;
+  document.getElementById('editEventoId').value = ev.id;
+  document.getElementById('editEventoNombre').value = ev.nombre;
+  document.getElementById('editEventoLugar').value = ev.lugar || '';
+  document.getElementById('editEventoFecha').value = ev.fecha;
+  document.getElementById('editEventoNotas').value = ev.notas || '';
+  abrirModal('modalEditarEvento');
+}
+async function guardarEdicionEvento(e){
+  e.preventDefault();
+  const id = document.getElementById('editEventoId').value;
+  const nombre = document.getElementById('editEventoNombre').value.trim();
+  const lugar = document.getElementById('editEventoLugar').value.trim();
+  const fecha = document.getElementById('editEventoFecha').value;
+  const notas = document.getElementById('editEventoNotas').value.trim();
+
+  const { error } = await client.from('eventos').update({ nombre, lugar, fecha, notas }).eq('id', id);
+  if(error){ alert(error.message); return; }
+  cerrarModal('modalEditarEvento');
+  await cargarDatos();
+  mostrarDetalleEvento(id);
+}
+async function eliminarEvento(id){
+  if(!confirm('Se eliminará el evento y todos sus movimientos (ingresos y gastos). ¿Continuar?')) return;
+  await client.from('movimientos').delete().eq('evento_id', id);
+  await client.from('eventos').delete().eq('id', id);
+  await cargarDatos();
+  mostrarVista('negocio', true);
 }
 
 // ===================== RENDER: PRESTAMOS =====================
@@ -951,8 +1181,8 @@ async function confirmarMovimiento(id){
     mostrarDetallePrestamo(mov.prestamo_id);
   }
 
-  // Recién al confirmarse (el día real del pago) tiene sentido preguntar si alguien apoyó
-  if(mov.tipo === 'egreso' && !mov.prestamo_id){
+  // Recién al confirmarse (el día real del pago) tiene sentido preguntar si alguien apoyó (solo gastos personales)
+  if(mov.tipo === 'egreso' && !mov.prestamo_id && mov.contexto !== 'negocio'){
     preguntarApoyo(mov);
   }
 }
@@ -972,6 +1202,8 @@ async function subirFoto(file){
 function abrirModalNuevoMovimiento(){
   document.getElementById('movFecha').value = hoyStr();
   seleccionarTipoMov('ingreso');
+  document.getElementById('movContexto').value = 'personal';
+  document.getElementById('movEventoId').value = '';
   abrirModal('modalNuevoMovimiento');
 }
 function seleccionarTipoMov(tipo){
@@ -992,6 +1224,8 @@ function abrirEdicionMovimiento(id){
   document.getElementById('movMonto').value = m.monto;
   document.getElementById('movDescripcion').value = m.descripcion || '';
   document.getElementById('movFecha').value = m.fecha;
+  document.getElementById('movContexto').value = m.contexto || 'personal';
+  document.getElementById('movEventoId').value = m.evento_id || '';
   const preview = document.getElementById('movFotoPreview');
   if(m.foto_url){ preview.src = m.foto_url; preview.style.display = 'block'; }
   else { preview.style.display = 'none'; }
@@ -1040,11 +1274,16 @@ async function guardarNuevoMovimiento(e){
 
   btn.disabled = true; btn.textContent = 'Guardando...';
   const tipo = document.getElementById('movTipo').value;
+  const contexto = document.getElementById('movContexto').value || 'personal';
+  const evento_id = document.getElementById('movEventoId').value || null;
   const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
+  const categoria = contexto === 'negocio'
+    ? (tipo==='ingreso' ? 'ingreso_evento' : 'gasto_evento')
+    : (tipo==='ingreso' ? 'otro_ingreso' : 'gasto');
 
   const { data: mov, error } = await client.from('movimientos').insert({
-    tipo, categoria: tipo==='ingreso' ? 'otro_ingreso' : 'gasto',
-    descripcion, monto, fecha, foto_url, estado: calcularEstadoPorFecha(fecha)
+    tipo, categoria, descripcion, monto, fecha, foto_url,
+    estado: calcularEstadoPorFecha(fecha), contexto, evento_id
   }).select().single();
 
   if(error){ btn.disabled=false; btn.textContent='Guardar'; alert(error.message); return; }
@@ -1053,8 +1292,8 @@ async function guardarNuevoMovimiento(e){
   cerrarModal('modalNuevoMovimiento');
   await cargarDatos();
 
-  // Si el egreso ya se confirma hoy, recién ahí tiene sentido preguntar si alguien apoyó
-  if(mov.tipo === 'egreso' && mov.estado === 'confirmado'){
+  // Si el egreso ya se confirma hoy, recién ahí tiene sentido preguntar si alguien apoyó (solo gastos personales)
+  if(mov.tipo === 'egreso' && mov.estado === 'confirmado' && mov.contexto !== 'negocio'){
     preguntarApoyo(mov);
   }
 }
@@ -1475,6 +1714,8 @@ document.getElementById('formAccionPrestamo').addEventListener('submit', guardar
 document.getElementById('formEditarPrestamo').addEventListener('submit', guardarEdicionPrestamo);
 document.getElementById('formConvertirInversion').addEventListener('submit', guardarConversionInversion);
 document.getElementById('formPreguntaApoyo').addEventListener('submit', guardarPreguntaApoyo);
+document.getElementById('formNuevoEvento').addEventListener('submit', guardarNuevoEvento);
+document.getElementById('formEditarEvento').addEventListener('submit', guardarEdicionEvento);
 
 revisarSesion();
 </script>

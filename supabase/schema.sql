@@ -26,20 +26,37 @@ create table if not exists prestamos (
 );
 
 -- ============================================================
+-- TABLA: eventos
+-- Trabajos del negocio de alquiler de sonido (Evento A, Evento B, ...).
+-- Cada evento agrupa sus propios ingresos/egresos; el saldo del
+-- evento y del negocio se calculan sumando movimientos, no se guardan.
+-- ============================================================
+create table if not exists eventos (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null,
+  lugar text,
+  fecha date not null default current_date,
+  notas text,
+  created_at timestamptz not null default now()
+);
+
+-- ============================================================
 -- TABLA: movimientos
 -- Todo ingreso/egreso, incluidos los generados por préstamos
--- (desembolso, pago, cobro, interés). Cada uno puede llevar foto
--- de sustento (captura de Yape, transferencia, etc.).
+-- (desembolso, pago, cobro, interés) y por eventos del negocio.
+-- Cada uno puede llevar foto de sustento (captura de Yape, etc.).
 -- ============================================================
 create table if not exists movimientos (
   id uuid primary key default gen_random_uuid(),
   tipo text not null check (tipo in ('ingreso', 'egreso')),
-  categoria text not null,                -- 'otro_ingreso','gasto','prestamo_recibido','pago_prestamo_recibido','prestamo_otorgado','cobro_prestamo_otorgado','interes_prestamo', etc.
+  categoria text not null,                -- 'otro_ingreso','gasto','prestamo_recibido','pago_prestamo_recibido','prestamo_otorgado','cobro_prestamo_otorgado','interes_prestamo','ingreso_evento','gasto_evento', etc.
   descripcion text,
   monto numeric(12,2) not null,
   fecha date not null default current_date,
   foto_url text,                          -- URL pública del bucket 'sustentos'
   prestamo_id uuid references prestamos(id) on delete set null,
+  evento_id uuid references eventos(id) on delete set null,
+  contexto text not null default 'personal' check (contexto in ('personal', 'negocio')),
   estado text not null default 'confirmado' check (estado in ('confirmado', 'programado')), -- 'programado' = fecha futura, no cuenta en totales hasta confirmarse
   created_at timestamptz not null default now()
 );
@@ -47,6 +64,8 @@ create table if not exists movimientos (
 create index if not exists idx_movimientos_fecha on movimientos(fecha desc);
 create index if not exists idx_movimientos_estado on movimientos(estado);
 create index if not exists idx_movimientos_prestamo on movimientos(prestamo_id);
+create index if not exists idx_movimientos_evento on movimientos(evento_id);
+create index if not exists idx_movimientos_contexto on movimientos(contexto);
 
 -- ============================================================
 -- RLS — proyecto de uso personal (tú + tu esposa), sin
@@ -54,6 +73,7 @@ create index if not exists idx_movimientos_prestamo on movimientos(prestamo_id);
 -- ============================================================
 alter table prestamos enable row level security;
 alter table movimientos enable row level security;
+alter table eventos enable row level security;
 
 create policy "prestamos_all_authenticated" on prestamos
   for all to authenticated using (true) with check (true);
@@ -61,9 +81,12 @@ create policy "prestamos_all_authenticated" on prestamos
 create policy "movimientos_all_authenticated" on movimientos
   for all to authenticated using (true) with check (true);
 
+create policy "eventos_all_authenticated" on eventos
+  for all to authenticated using (true) with check (true);
+
 -- Si el proyecto tiene desactivado "Automatically expose new tables",
 -- estos GRANT son obligatorios (RLS controla filas, no privilegios de tabla):
-grant select, insert, update, delete on prestamos, movimientos to authenticated;
+grant select, insert, update, delete on prestamos, movimientos, eventos to authenticated;
 
 -- ============================================================
 -- STORAGE — bucket para las capturas/sustentos (Yape, transferencias)
