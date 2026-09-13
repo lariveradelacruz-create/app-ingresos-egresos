@@ -283,7 +283,7 @@
       </div>
       <div class="campo">
         <label>Foto de sustento (opcional)</label>
-        <input type="file" accept="image/*" capture="environment" id="movFoto" onchange="previsualizarFoto(this,'movFotoPreview')">
+        <input type="file" accept="image/*" id="movFoto" onchange="previsualizarFoto(this,'movFotoPreview')">
         <img class="foto-preview" id="movFotoPreview">
       </div>
       <div class="campo" id="bloqueApoyo" style="display:none;">
@@ -318,17 +318,44 @@
         <button type="button" id="btnPrestamoMePrestan" onclick="seleccionarTipoPrestamo('me_prestan')">Me prestan</button>
       </div>
       <input type="hidden" id="prestamoTipo" value="yo_presto">
+      <input type="hidden" id="prestamoVencimientoRaw">
       <div class="campo">
-        <label>¿Con quién? (ej. Esposa, Juan)</label>
+        <label>¿A quién le prestas? (ej. Juan)</label>
         <input type="text" id="prestamoContraparte" required>
       </div>
       <div class="campo">
         <label>Monto (S/)</label>
-        <input type="number" step="0.01" min="0.01" id="prestamoMonto" required>
+        <input type="number" step="0.01" min="0.01" id="prestamoMonto" oninput="calcularInteres()" required>
+      </div>
+      <div id="bloqueInteres" style="display:none;">
+        <div class="campo">
+          <label>Tasa de interés (%) — lineal sobre el monto</label>
+          <input type="number" step="0.01" min="0" id="prestamoTasa" oninput="calcularInteres()" placeholder="Ej: 10">
+        </div>
+        <div class="campo">
+          <label>Interés</label>
+          <input type="text" id="prestamoInteresCalc" readonly value="S/ 0.00" style="background:#eef1f8;">
+        </div>
       </div>
       <div class="campo">
-        <label>Fecha</label>
-        <input type="date" id="prestamoFecha" required>
+        <label>Fecha de inicio</label>
+        <input type="date" id="prestamoFecha" required oninput="calcularVencimiento()">
+      </div>
+      <div id="bloquePlazo" style="display:none;">
+        <div class="campo">
+          <label>Plazo</label>
+          <div style="display:flex; gap:8px;">
+            <select id="prestamoPlazoTipo" onchange="actualizarOpcionesPlazo()">
+              <option value="mensual">Mensual</option>
+              <option value="quincenal">Quincenal</option>
+            </select>
+            <select id="prestamoPlazoCantidad" onchange="calcularVencimiento()"></select>
+          </div>
+        </div>
+        <div class="campo">
+          <label>Fecha de vencimiento</label>
+          <input type="text" id="prestamoVencimiento" readonly style="background:#eef1f8;">
+        </div>
       </div>
       <div class="campo">
         <label>Notas (opcional)</label>
@@ -336,7 +363,7 @@
       </div>
       <div class="campo">
         <label>Foto de sustento (opcional)</label>
-        <input type="file" accept="image/*" capture="environment" id="prestamoFoto" onchange="previsualizarFoto(this,'prestamoFotoPreview')">
+        <input type="file" accept="image/*" id="prestamoFoto" onchange="previsualizarFoto(this,'prestamoFotoPreview')">
         <img class="foto-preview" id="prestamoFotoPreview">
       </div>
       <button type="submit" class="btn" id="btnGuardarPrestamo">Guardar</button>
@@ -356,7 +383,7 @@
       </div>
       <div class="campo">
         <label>Foto de sustento (opcional)</label>
-        <input type="file" accept="image/*" capture="environment" id="accionFoto" onchange="previsualizarFoto(this,'accionFotoPreview')">
+        <input type="file" accept="image/*" id="accionFoto" onchange="previsualizarFoto(this,'accionFotoPreview')">
         <img class="foto-preview" id="accionFotoPreview">
       </div>
       <button type="submit" class="btn" id="btnGuardarAccion">Guardar</button>
@@ -389,6 +416,10 @@ function hoyStr(){
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
+function parseFechaUTC(str){ const [y,m,d] = str.split('-').map(Number); return new Date(Date.UTC(y, m-1, d)); }
+function formatFechaISO(date){ return date.toISOString().slice(0,10); }
+function sumarDias(fechaStr, dias){ const d = parseFechaUTC(fechaStr); d.setUTCDate(d.getUTCDate()+dias); return formatFechaISO(d); }
+function sumarMeses(fechaStr, meses){ const d = parseFechaUTC(fechaStr); d.setUTCMonth(d.getUTCMonth()+meses); return formatFechaISO(d); }
 function formatFechaLegible(str){
   const [y,m,d] = str.split('-').map(Number);
   const fecha = new Date(Date.UTC(y, m-1, d));
@@ -566,8 +597,9 @@ function renderTarjetasPrestamo(lista, tagTipo){
         <div class="barra"><div class="relleno" style="width:${pct}%"></div></div>
         <div class="saldo-row">
           <span>Saldo: ${formatMonto(p.saldo_pendiente)}</span>
-          <span>Inicial: ${formatMonto(p.monto_inicial)}</span>
+          <span>Inicial: ${formatMonto(p.monto_inicial)}${p.tasa_interes ? ` + ${p.tasa_interes}%` : ''}</span>
         </div>
+        ${p.fecha_vencimiento ? `<div class="saldo-row"><span>Vence: ${formatFechaLegible(p.fecha_vencimiento)}</span></div>` : ''}
       </div>
     `;
   }).join('');
@@ -587,7 +619,10 @@ function mostrarDetallePrestamo(id){
       <span class="tag ${p.estado==='pagado' ? 'pagado' : (esYoPresto?'deben':'debo')}">${p.estado==='pagado' ? 'Pagado' : (esYoPresto ? 'Te debe' : 'Le debes')}</span>
     </div>
     <div class="monto-grande">${formatMonto(p.saldo_pendiente)}</div>
-    <div style="color:var(--texto-suave); font-size:13px;">de ${formatMonto(p.monto_inicial)} inicial · desde ${formatFechaLegible(p.fecha_inicio)}</div>
+    <div style="color:var(--texto-suave); font-size:13px;">
+      de ${formatMonto(p.monto_inicial)} inicial${p.tasa_interes ? ` + ${p.tasa_interes}% interés (${formatMonto(p.interes)})` : ''} · desde ${formatFechaLegible(p.fecha_inicio)}
+      ${p.fecha_vencimiento ? `<br>Vence: ${formatFechaLegible(p.fecha_vencimiento)} (${p.plazo_cantidad} ${p.plazo_tipo==='mensual' ? 'mes(es)' : 'quincena(s)'})` : ''}
+    </div>
     ${p.notas ? `<div style="margin-top:8px; font-size:13px;">${escapeHtml(p.notas)}</div>` : ''}
     ${p.estado!=='pagado' ? `
       <div class="acciones-prestamo">
@@ -687,6 +722,36 @@ function seleccionarTipoPrestamo(tipo){
   document.getElementById('prestamoTipo').value = tipo;
   document.getElementById('btnPrestamoYoPresto').className = tipo==='yo_presto' ? 'sel-egreso' : '';
   document.getElementById('btnPrestamoMePrestan').className = tipo==='me_prestan' ? 'sel-ingreso' : '';
+  const esYoPresto = tipo === 'yo_presto';
+  document.getElementById('bloqueInteres').style.display = esYoPresto ? 'block' : 'none';
+  document.getElementById('bloquePlazo').style.display = esYoPresto ? 'block' : 'none';
+  if(esYoPresto){
+    actualizarOpcionesPlazo();
+    calcularInteres();
+  }
+}
+function calcularInteres(){
+  const monto = parseFloat(document.getElementById('prestamoMonto').value) || 0;
+  const tasa = parseFloat(document.getElementById('prestamoTasa').value) || 0;
+  const interes = monto * (tasa/100);
+  document.getElementById('prestamoInteresCalc').value = formatMonto(interes);
+}
+function actualizarOpcionesPlazo(){
+  const tipo = document.getElementById('prestamoPlazoTipo').value;
+  const opciones = tipo==='mensual' ? [1,2,3] : [1,2,3,4,5,6];
+  const unidad = tipo==='mensual' ? 'mes' : 'quincena';
+  const sel = document.getElementById('prestamoPlazoCantidad');
+  sel.innerHTML = opciones.map(n=>`<option value="${n}">${n} ${unidad}${n===1?'':(tipo==='mensual'?'es':'s')}</option>`).join('');
+  calcularVencimiento();
+}
+function calcularVencimiento(){
+  const fecha = document.getElementById('prestamoFecha').value;
+  const tipo = document.getElementById('prestamoPlazoTipo').value;
+  const cant = parseInt(document.getElementById('prestamoPlazoCantidad').value) || 0;
+  if(!fecha || !cant) return;
+  const venc = tipo==='mensual' ? sumarMeses(fecha, cant) : sumarDias(fecha, cant*15);
+  document.getElementById('prestamoVencimientoRaw').value = venc;
+  document.getElementById('prestamoVencimiento').value = formatFechaLegible(venc);
 }
 async function guardarNuevoPrestamo(e){
   e.preventDefault();
@@ -701,8 +766,17 @@ async function guardarNuevoPrestamo(e){
   const fotoFile = document.getElementById('prestamoFoto').files[0];
   const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
 
+  const esYoPresto = tipo === 'yo_presto';
+  const tasa_interes = esYoPresto ? (parseFloat(document.getElementById('prestamoTasa').value) || 0) : null;
+  const interes = esYoPresto ? monto * (tasa_interes/100) : 0;
+  const plazo_tipo = esYoPresto ? document.getElementById('prestamoPlazoTipo').value : null;
+  const plazo_cantidad = esYoPresto ? (parseInt(document.getElementById('prestamoPlazoCantidad').value) || null) : null;
+  const fecha_vencimiento = esYoPresto ? (document.getElementById('prestamoVencimientoRaw').value || null) : null;
+  const saldoInicial = monto + interes;
+
   const { data: prestamo, error } = await client.from('prestamos').insert({
-    tipo, contraparte, monto_inicial: monto, saldo_pendiente: monto, fecha_inicio: fecha, notas
+    tipo, contraparte, monto_inicial: monto, saldo_pendiente: saldoInicial, fecha_inicio: fecha, notas,
+    tasa_interes, interes, plazo_tipo, plazo_cantidad, fecha_vencimiento
   }).select().single();
 
   if(error){ btn.disabled=false; btn.textContent='Guardar'; alert(error.message); return; }
