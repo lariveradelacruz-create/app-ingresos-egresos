@@ -98,6 +98,8 @@
   .item-mov .monto.ingreso{color:var(--verde);}
   .item-mov .monto.egreso{color:var(--rojo);}
   .item-mov .foto-thumb{width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;}
+  .btn-eliminar{background:none; border:none; color:#c1c8d6; font-size:16px; padding:4px; flex-shrink:0;}
+  .btn-eliminar:active{color:var(--rojo);}
 
   .vacio{text-align:center; color:var(--texto-suave); font-size:14px; padding:30px 10px;}
 
@@ -568,6 +570,7 @@ function renderListaMovimientos(cont, lista){
       </div>
       <div class="monto ${m.tipo}">${m.tipo==='ingreso'?'+':'-'}${formatMonto(m.monto)}</div>
       ${m.foto_url ? `<img class="foto-thumb" src="${m.foto_url}" onclick="abrirFoto('${m.foto_url}')">` : ''}
+      <button class="btn-eliminar" onclick="eliminarMovimiento('${m.id}')" title="Eliminar">🗑</button>
     </div>
   `).join('');
 }
@@ -630,12 +633,52 @@ function mostrarDetallePrestamo(id){
         ${esYoPresto ? `<button class="btn btn-secundario" style="flex:1" onclick="abrirModalAccion('${p.id}','interes')">+ Interés</button>` : ''}
       </div>
     ` : ''}
+    <button style="margin-top:10px; width:100%; background:none; border:none; color:var(--rojo); font-size:13px; padding:6px;" onclick="eliminarPrestamo('${p.id}')">🗑 Eliminar préstamo</button>
   `;
 
   const historial = movimientos.filter(m=>m.prestamo_id===p.id);
   renderListaMovimientos(document.getElementById('listaHistorialPrestamo'), historial);
 
   mostrarVista('detallePrestamo');
+}
+
+// ===================== ELIMINAR =====================
+async function eliminarMovimiento(id){
+  const mov = movimientos.find(m=>m.id===id);
+  if(!mov) return;
+
+  if(mov.prestamo_id){
+    const p = prestamos.find(x=>x.id===mov.prestamo_id);
+    const esFundacional = mov.categoria === 'prestamo_recibido' || mov.categoria === 'prestamo_otorgado';
+    if(esFundacional){
+      const nombre = p ? p.contraparte : 'este préstamo';
+      if(!confirm(`Este movimiento es el origen del préstamo con ${nombre}. Se eliminará el préstamo completo junto con todo su historial (pagos, cobros, interés). ¿Continuar?`)) return;
+      await eliminarPrestamo(mov.prestamo_id, true);
+      return;
+    }
+    if(!confirm('¿Eliminar este movimiento?')) return;
+    await client.from('movimientos').delete().eq('id', id);
+    if(p && (mov.categoria === 'pago_prestamo' || mov.categoria === 'cobro_prestamo')){
+      const nuevoSaldo = Number(p.saldo_pendiente) + Number(mov.monto);
+      await client.from('prestamos').update({ saldo_pendiente: nuevoSaldo, estado: 'activo' }).eq('id', p.id);
+    }
+  } else {
+    if(!confirm('¿Eliminar este movimiento?')) return;
+    await client.from('movimientos').delete().eq('id', id);
+  }
+
+  await cargarDatos();
+  if(document.getElementById('vistaDetallePrestamo').classList.contains('activa') && mov.prestamo_id){
+    mostrarDetallePrestamo(mov.prestamo_id);
+  }
+}
+
+async function eliminarPrestamo(id, saltarConfirm){
+  if(!saltarConfirm && !confirm('Se eliminará el préstamo y todos sus movimientos asociados (desembolso, pagos, cobros, interés). ¿Continuar?')) return;
+  await client.from('movimientos').delete().eq('prestamo_id', id);
+  await client.from('prestamos').delete().eq('id', id);
+  await cargarDatos();
+  mostrarVista('prestamos', true);
 }
 
 // ===================== SUBIDA DE FOTO =====================
