@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Ingresos y Egresos</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --azul:#1d4ed8;
+    --azul-oscuro:#1e3a8a;
+    --verde:#16a34a;
+    --verde-suave:#dcfce7;
+    --rojo:#dc2626;
+    --rojo-suave:#fee2e2;
+    --bg:#f4f6fb;
+    --card:#ffffff;
+    --texto:#1f2937;
+    --texto-suave:#6b7280;
+    --borde:#e5e7eb;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg); color:var(--texto); -webkit-tap-highlight-color:transparent;
+  }
+  input,select,textarea,button{font-family:inherit;font-size:16px;}
+  button{cursor:pointer;}
+
+  /* ---------- LOGIN ---------- */
+  #vistaLogin{
+    min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; background:linear-gradient(160deg,var(--azul-oscuro),var(--azul));
+  }
+  .login-box{
+    background:var(--card); border-radius:16px; padding:32px 24px; width:100%; max-width:360px;
+    box-shadow:0 10px 30px rgba(0,0,0,.2);
+  }
+  .login-box h1{margin:0 0 4px; font-size:22px; text-align:center;}
+  .login-box p.sub{margin:0 0 24px; text-align:center; color:var(--texto-suave); font-size:14px;}
+  .campo{margin-bottom:14px;}
+  .campo label{display:block; font-size:13px; color:var(--texto-suave); margin-bottom:4px;}
+  .campo input, .campo select, .campo textarea{
+    width:100%; padding:11px 12px; border:1px solid var(--borde); border-radius:10px; background:#fafbff;
+  }
+  .btn{
+    width:100%; padding:12px; border:none; border-radius:10px; background:var(--azul); color:#fff;
+    font-weight:600; font-size:15px;
+  }
+  .btn:disabled{opacity:.6;}
+  .btn-secundario{background:#eef1f8; color:var(--azul-oscuro);}
+  .btn-rojo{background:var(--rojo);}
+  .error-msg{color:var(--rojo); font-size:13px; margin-top:8px; text-align:center; min-height:16px;}
+
+  /* ---------- APP SHELL ---------- */
+  #appShell{display:none; min-height:100vh; padding-bottom:70px;}
+  header.top{
+    position:sticky; top:0; z-index:20; background:var(--azul); color:#fff;
+    padding:14px 16px; display:flex; align-items:center; gap:10px;
+  }
+  header.top .volver{background:none;border:none;color:#fff;font-size:20px;padding:0 4px;}
+  header.top h2{margin:0; font-size:17px; flex:1;}
+  header.top .salir{background:none;border:none;color:#dbe4ff;font-size:13px;}
+
+  .container{max-width:480px; margin:0 auto; padding:16px;}
+  .vista{display:none;}
+  .vista.activa{display:block;}
+
+  /* tarjetas resumen */
+  .resumen-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;}
+  .resumen-grid .card.wide{grid-column:1 / -1;}
+  .card{
+    background:var(--card); border-radius:14px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .card .etiqueta{font-size:12px; color:var(--texto-suave); margin-bottom:4px;}
+  .card .valor{font-size:20px; font-weight:700;}
+  .card .valor.verde{color:var(--verde);}
+  .card .valor.rojo{color:var(--rojo);}
+  .card .valor.azul{color:var(--azul);}
+
+  .seccion-titulo{font-size:14px; font-weight:600; color:var(--texto-suave); margin:18px 0 8px; text-transform:uppercase; letter-spacing:.03em;}
+
+  /* lista movimientos */
+  .item-mov{
+    background:var(--card); border-radius:12px; padding:12px; display:flex; align-items:center; gap:10px;
+    margin-bottom:8px; box-shadow:0 1px 2px rgba(0,0,0,.05);
+  }
+  .item-mov .icono{
+    width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+    font-size:18px; flex-shrink:0;
+  }
+  .item-mov .icono.ingreso{background:var(--verde-suave); color:var(--verde);}
+  .item-mov .icono.egreso{background:var(--rojo-suave); color:var(--rojo);}
+  .item-mov .info{flex:1; min-width:0;}
+  .item-mov .info .desc{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .item-mov .info .meta{font-size:12px; color:var(--texto-suave);}
+  .item-mov .monto{font-size:15px; font-weight:700; white-space:nowrap;}
+  .item-mov .monto.ingreso{color:var(--verde);}
+  .item-mov .monto.egreso{color:var(--rojo);}
+  .item-mov .foto-thumb{width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;}
+
+  .vacio{text-align:center; color:var(--texto-suave); font-size:14px; padding:30px 10px;}
+
+  /* filtros */
+  .filtros{display:flex; gap:8px; margin-bottom:12px;}
+  .filtros button{
+    flex:1; padding:8px; border-radius:10px; border:1px solid var(--borde); background:var(--card); font-size:13px; font-weight:600; color:var(--texto-suave);
+  }
+  .filtros button.activo{background:var(--azul); color:#fff; border-color:var(--azul);}
+
+  /* prestamos */
+  .prestamo-card{
+    background:var(--card); border-radius:14px; padding:14px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .prestamo-card .fila-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .prestamo-card .contraparte{font-weight:700; font-size:15px;}
+  .tag{font-size:11px; padding:3px 8px; border-radius:20px; font-weight:600;}
+  .tag.deben{background:var(--verde-suave); color:var(--verde);}
+  .tag.debo{background:var(--rojo-suave); color:var(--rojo);}
+  .tag.pagado{background:#e5e7eb; color:var(--texto-suave);}
+  .barra{height:6px; background:#eef1f8; border-radius:6px; overflow:hidden; margin:8px 0 6px;}
+  .barra .relleno{height:100%; background:var(--azul);}
+  .prestamo-card .saldo-row{display:flex; justify-content:space-between; font-size:13px; color:var(--texto-suave);}
+
+  /* nav inferior */
+  nav.bottom-nav{
+    position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--borde);
+    display:flex; z-index:30; max-width:480px; margin:0 auto;
+  }
+  nav.bottom-nav button{
+    flex:1; background:none; border:none; padding:9px 4px 8px; display:flex; flex-direction:column; align-items:center; gap:2px;
+    color:var(--texto-suave); font-size:11px;
+  }
+  nav.bottom-nav button .ico{font-size:20px;}
+  nav.bottom-nav button.activo{color:var(--azul);}
+
+  .fab{
+    position:fixed; right:calc(50% - 240px + 16px); bottom:82px; width:56px; height:56px; border-radius:50%;
+    background:var(--azul); color:#fff; border:none; font-size:26px; box-shadow:0 6px 16px rgba(29,78,216,.4); z-index:25;
+  }
+  @media (max-width:512px){ .fab{ right:16px; } }
+
+  /* modales */
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:50; align-items:flex-end; justify-content:center;
+  }
+  .modal-overlay.activo{display:flex;}
+  .modal-box{
+    background:#fff; width:100%; max-width:480px; border-radius:18px 18px 0 0; padding:20px; max-height:92vh; overflow-y:auto;
+  }
+  .modal-box h3{margin:0 0 16px;}
+  .modal-cerrar{float:right; background:none; border:none; font-size:20px; color:var(--texto-suave);}
+  .tipo-toggle{display:flex; gap:8px; margin-bottom:14px;}
+  .tipo-toggle button{
+    flex:1; padding:11px; border-radius:10px; border:1px solid var(--borde); background:#fafbff; font-weight:600; color:var(--texto-suave);
+  }
+  .tipo-toggle button.sel-ingreso{background:var(--verde-suave); border-color:var(--verde); color:var(--verde);}
+  .tipo-toggle button.sel-egreso{background:var(--rojo-suave); border-color:var(--rojo); color:var(--rojo);}
+
+  .foto-preview{width:100%; max-height:220px; object-fit:contain; border-radius:10px; margin-top:8px; display:none; background:#f1f3f9;}
+
+  #modalFoto{background:rgba(0,0,0,.9);}
+  #modalFoto img{max-width:100%; max-height:85vh; border-radius:8px;}
+  #modalFoto .modal-cerrar{color:#fff; position:fixed; top:14px; right:18px; font-size:28px;}
+
+  .detalle-header{background:var(--card); border-radius:14px; padding:16px; margin-bottom:14px;}
+  .detalle-header .monto-grande{font-size:26px; font-weight:800;}
+  .acciones-prestamo{display:flex; gap:8px; margin-top:12px;}
+  .acciones-prestamo .btn{padding:10px;}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="vistaLogin">
+  <div class="login-box">
+    <h1>Ingresos y Egresos</h1>
+    <p class="sub">Ingresa con tu correo</p>
+    <form id="formLogin">
+      <div class="campo">
+        <label>Correo</label>
+        <input type="email" id="loginEmail" required autocomplete="username">
+      </div>
+      <div class="campo">
+        <label>Clave</label>
+        <input type="password" id="loginPass" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn" id="btnLogin">Ingresar</button>
+      <div class="error-msg" id="loginError"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="appShell">
+  <header class="top">
+    <button class="volver" id="btnVolver" style="display:none;" onclick="volver()">←</button>
+    <h2 id="tituloHeader">Inicio</h2>
+    <button class="salir" onclick="cerrarSesion()">Salir</button>
+  </header>
+
+  <div class="container">
+
+    <!-- ---- INICIO ---- -->
+    <div class="vista activa" id="vistaInicio">
+      <div class="resumen-grid">
+        <div class="card wide">
+          <div class="etiqueta">Efectivo disponible</div>
+          <div class="valor azul" id="saldoTotal">S/ 0.00</div>
+        </div>
+        <div class="card">
+          <div class="etiqueta">Ingresos del mes</div>
+          <div class="valor verde" id="ingresosMes">S/ 0.00</div>
+        </div>
+        <div class="card">
+          <div class="etiqueta">Egresos del mes</div>
+          <div class="valor rojo" id="egresosMes">S/ 0.00</div>
+        </div>
+      </div>
+
+      <div class="seccion-titulo">Últimos movimientos</div>
+      <div id="listaInicioMov"></div>
+    </div>
+
+    <!-- ---- MOVIMIENTOS ---- -->
+    <div class="vista" id="vistaMovimientos">
+      <div class="filtros">
+        <button class="activo" data-filtro="todos" onclick="filtrarMovimientos('todos')">Todos</button>
+        <button data-filtro="ingreso" onclick="filtrarMovimientos('ingreso')">Ingresos</button>
+        <button data-filtro="egreso" onclick="filtrarMovimientos('egreso')">Egresos</button>
+      </div>
+      <div id="listaMovimientos"></div>
+    </div>
+
+    <!-- ---- PRESTAMOS ---- -->
+    <div class="vista" id="vistaPrestamos">
+      <div class="seccion-titulo">Me deben (préstamos que hiciste)</div>
+      <div id="listaYoPresto"></div>
+      <div class="seccion-titulo">Debo (te prestaron)</div>
+      <div id="listaMePrestan"></div>
+    </div>
+
+    <!-- ---- DETALLE PRESTAMO ---- -->
+    <div class="vista" id="vistaDetallePrestamo">
+      <div class="detalle-header" id="detallePrestamoHeader"></div>
+      <div class="seccion-titulo">Historial</div>
+      <div id="listaHistorialPrestamo"></div>
+    </div>
+
+  </div>
+
+  <button class="fab" id="fabNuevo" onclick="abrirModalNuevoMovimiento()">+</button>
+
+  <nav class="bottom-nav">
+    <button class="activo" data-vista="inicio" onclick="mostrarVista('inicio', true)"><span class="ico">🏠</span>Inicio</button>
+    <button data-vista="movimientos" onclick="mostrarVista('movimientos', true)"><span class="ico">📋</span>Movimientos</button>
+    <button data-vista="prestamos" onclick="mostrarVista('prestamos', true)"><span class="ico">🤝</span>Préstamos</button>
+  </nav>
+</div>
+
+<!-- ============ MODAL: NUEVO MOVIMIENTO ============ -->
+<div class="modal-overlay" id="modalNuevoMovimiento">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalNuevoMovimiento')">✕</button>
+    <h3>Nuevo movimiento</h3>
+    <form id="formNuevoMovimiento">
+      <div class="tipo-toggle">
+        <button type="button" id="btnTipoIngreso" class="sel-ingreso" onclick="seleccionarTipoMov('ingreso')">↓ Ingreso</button>
+        <button type="button" id="btnTipoEgreso" onclick="seleccionarTipoMov('egreso')">↑ Egreso</button>
+      </div>
+      <input type="hidden" id="movTipo" value="ingreso">
+      <div class="campo">
+        <label>Monto (S/)</label>
+        <input type="number" step="0.01" min="0.01" id="movMonto" required>
+      </div>
+      <div class="campo">
+        <label>Descripción</label>
+        <input type="text" id="movDescripcion" placeholder="Ej: Venta, propina, mercado..." required>
+      </div>
+      <div class="campo">
+        <label>Fecha</label>
+        <input type="date" id="movFecha" required>
+      </div>
+      <div class="campo">
+        <label>Foto de sustento (opcional)</label>
+        <input type="file" accept="image/*" capture="environment" id="movFoto" onchange="previsualizarFoto(this,'movFotoPreview')">
+        <img class="foto-preview" id="movFotoPreview">
+      </div>
+      <div class="campo" id="bloqueApoyo" style="display:none;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:14px; color:var(--texto);">
+          <input type="checkbox" id="movTieneApoyo" onchange="toggleApoyo()" style="width:auto;">
+          ¿Alguien te apoyó con parte de este pago? (se registra como préstamo)
+        </label>
+        <div id="camposApoyo" style="display:none; margin-top:10px;">
+          <div class="campo">
+            <label>¿Quién apoyó?</label>
+            <input type="text" id="apoyoContraparte" placeholder="Ej: Martha">
+          </div>
+          <div class="campo">
+            <label>Monto del apoyo (S/)</label>
+            <input type="number" step="0.01" min="0.01" id="apoyoMonto">
+          </div>
+        </div>
+      </div>
+      <button type="submit" class="btn" id="btnGuardarMov">Guardar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ MODAL: NUEVO PRESTAMO ============ -->
+<div class="modal-overlay" id="modalNuevoPrestamo">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalNuevoPrestamo')">✕</button>
+    <h3>Nuevo préstamo</h3>
+    <form id="formNuevoPrestamo">
+      <div class="tipo-toggle">
+        <button type="button" id="btnPrestamoYoPresto" class="sel-egreso" onclick="seleccionarTipoPrestamo('yo_presto')">Yo presto</button>
+        <button type="button" id="btnPrestamoMePrestan" onclick="seleccionarTipoPrestamo('me_prestan')">Me prestan</button>
+      </div>
+      <input type="hidden" id="prestamoTipo" value="yo_presto">
+      <div class="campo">
+        <label>¿Con quién? (ej. Esposa, Juan)</label>
+        <input type="text" id="prestamoContraparte" required>
+      </div>
+      <div class="campo">
+        <label>Monto (S/)</label>
+        <input type="number" step="0.01" min="0.01" id="prestamoMonto" required>
+      </div>
+      <div class="campo">
+        <label>Fecha</label>
+        <input type="date" id="prestamoFecha" required>
+      </div>
+      <div class="campo">
+        <label>Notas (opcional)</label>
+        <textarea id="prestamoNotas" rows="2"></textarea>
+      </div>
+      <div class="campo">
+        <label>Foto de sustento (opcional)</label>
+        <input type="file" accept="image/*" capture="environment" id="prestamoFoto" onchange="previsualizarFoto(this,'prestamoFotoPreview')">
+        <img class="foto-preview" id="prestamoFotoPreview">
+      </div>
+      <button type="submit" class="btn" id="btnGuardarPrestamo">Guardar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ MODAL: REGISTRAR PAGO/COBRO/INTERES ============ -->
+<div class="modal-overlay" id="modalAccionPrestamo">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalAccionPrestamo')">✕</button>
+    <h3 id="tituloAccionPrestamo">Registrar</h3>
+    <form id="formAccionPrestamo">
+      <div class="campo">
+        <label>Monto (S/)</label>
+        <input type="number" step="0.01" min="0.01" id="accionMonto" required>
+      </div>
+      <div class="campo">
+        <label>Foto de sustento (opcional)</label>
+        <input type="file" accept="image/*" capture="environment" id="accionFoto" onchange="previsualizarFoto(this,'accionFotoPreview')">
+        <img class="foto-preview" id="accionFotoPreview">
+      </div>
+      <button type="submit" class="btn" id="btnGuardarAccion">Guardar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ MODAL: VER FOTO ============ -->
+<div class="modal-overlay" id="modalFoto" onclick="cerrarModal('modalFoto')">
+  <button class="modal-cerrar">✕</button>
+  <img id="fotoGrande" src="">
+</div>
+
+<script>
+// ===================== CONFIG SUPABASE =====================
+const SB_URL = 'https://tgyzzfdwfwkfoohsxhpr.supabase.co';
+const SB_KEY = 'sb_publishable_NMZfAA-gHJHQbXqmeycQEg_FmxRkpbj';
+const client = supabase.createClient(SB_URL, SB_KEY);
+
+// ===================== ESTADO GLOBAL =====================
+let sesion = null;
+let movimientos = [];
+let prestamos = [];
+let filtroMovActual = 'todos';
+let pilaVistas = ['inicio'];
+let prestamoAccionActual = null; // { prestamo, accion }
+
+// ===================== UTILIDADES DE FECHA =====================
+function hoyStr(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function formatFechaLegible(str){
+  const [y,m,d] = str.split('-').map(Number);
+  const fecha = new Date(Date.UTC(y, m-1, d));
+  return fecha.toLocaleDateString('es-PE', { day:'2-digit', month:'short', year:'numeric', timeZone:'UTC' });
+}
+function esDelMesActual(fechaStr){
+  const hoy = new Date();
+  const [y,m] = fechaStr.split('-').map(Number);
+  return y === hoy.getFullYear() && m === (hoy.getMonth()+1);
+}
+
+// ===================== UTILIDADES GENERALES =====================
+function formatMonto(n){
+  return 'S/ ' + Number(n).toLocaleString('es-PE', { minimumFractionDigits:2, maximumFractionDigits:2 });
+}
+function mostrarError(id, msg){ document.getElementById(id).textContent = msg; }
+function previsualizarFoto(input, idPreview){
+  const preview = document.getElementById(idPreview);
+  if(input.files && input.files[0]){
+    preview.src = URL.createObjectURL(input.files[0]);
+    preview.style.display = 'block';
+  } else {
+    preview.style.display = 'none';
+  }
+}
+function abrirFoto(url){
+  document.getElementById('fotoGrande').src = url;
+  document.getElementById('modalFoto').classList.add('activo');
+}
+function abrirModal(id){ document.getElementById(id).classList.add('activo'); }
+function cerrarModal(id){
+  document.getElementById(id).classList.remove('activo');
+  if(id === 'modalNuevoMovimiento'){
+    document.getElementById('formNuevoMovimiento').reset();
+    document.getElementById('camposApoyo').style.display = 'none';
+  }
+  if(id === 'modalNuevoPrestamo') document.getElementById('formNuevoPrestamo').reset();
+  if(id === 'modalAccionPrestamo') document.getElementById('formAccionPrestamo').reset();
+  ['movFotoPreview','prestamoFotoPreview','accionFotoPreview'].forEach(p=>{
+    const el = document.getElementById(p);
+    if(el){ el.style.display='none'; el.src=''; }
+  });
+}
+
+// ===================== AUTH =====================
+async function manejarLogin(e){
+  e.preventDefault();
+  mostrarError('loginError','');
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  const btn = document.getElementById('btnLogin');
+  btn.disabled = true; btn.textContent = 'Ingresando...';
+  const { data, error } = await client.auth.signInWithPassword({ email, password: pass });
+  btn.disabled = false; btn.textContent = 'Ingresar';
+  if(error){ mostrarError('loginError','Correo o clave incorrectos'); return; }
+  sesion = data.session;
+  await iniciarApp();
+}
+async function revisarSesion(){
+  const { data } = await client.auth.getSession();
+  if(data.session){ sesion = data.session; await iniciarApp(); }
+}
+function cerrarSesion(){ client.auth.signOut(); location.reload(); }
+
+async function iniciarApp(){
+  document.getElementById('vistaLogin').style.display = 'none';
+  document.getElementById('appShell').style.display = 'block';
+  document.getElementById('movFecha').value = hoyStr();
+  document.getElementById('prestamoFecha').value = hoyStr();
+  await cargarDatos();
+  mostrarVista('inicio', true);
+}
+
+// ===================== CARGA DE DATOS =====================
+async function cargarDatos(){
+  const [{ data: movs, error: e1 }, { data: prest, error: e2 }] = await Promise.all([
+    client.from('movimientos').select('*').order('fecha', { ascending:false }).order('created_at', { ascending:false }).limit(300),
+    client.from('prestamos').select('*').order('created_at', { ascending:false })
+  ]);
+  if(e1) console.error(e1); if(e2) console.error(e2);
+  movimientos = movs || [];
+  prestamos = prest || [];
+  renderInicio();
+  renderMovimientos();
+  renderPrestamos();
+}
+
+// ===================== NAVEGACION =====================
+const TITULOS = { inicio:'Inicio', movimientos:'Movimientos', prestamos:'Préstamos', detallePrestamo:'Préstamo' };
+function mostrarVista(nombre, esPrincipal){
+  document.querySelectorAll('.vista').forEach(v=>v.classList.remove('activa'));
+  const mapId = { inicio:'vistaInicio', movimientos:'vistaMovimientos', prestamos:'vistaPrestamos', detallePrestamo:'vistaDetallePrestamo' };
+  document.getElementById(mapId[nombre]).classList.add('activa');
+  document.getElementById('tituloHeader').textContent = TITULOS[nombre];
+
+  document.querySelectorAll('nav.bottom-nav button').forEach(b=>b.classList.remove('activo'));
+  const navBtn = document.querySelector(`nav.bottom-nav button[data-vista="${nombre}"]`);
+  if(navBtn) navBtn.classList.add('activo');
+
+  document.getElementById('btnVolver').style.display = (nombre==='detallePrestamo') ? 'inline-block' : 'none';
+  document.getElementById('fabNuevo').style.display = (nombre==='detallePrestamo') ? 'none' : 'flex';
+  document.getElementById('fabNuevo').onclick = (nombre==='prestamos') ? abrirModalNuevoPrestamo : abrirModalNuevoMovimiento;
+
+  if(esPrincipal){ pilaVistas = [nombre]; }
+  else { pilaVistas.push(nombre); }
+}
+function volver(){
+  pilaVistas.pop();
+  const anterior = pilaVistas[pilaVistas.length-1] || 'inicio';
+  mostrarVista(anterior, true);
+}
+
+// ===================== RENDER: INICIO =====================
+function renderInicio(){
+  const saldo = movimientos.reduce((acc,m)=> acc + (m.tipo==='ingreso' ? Number(m.monto) : -Number(m.monto)), 0);
+  document.getElementById('saldoTotal').textContent = formatMonto(saldo);
+
+  const delMes = movimientos.filter(m=>esDelMesActual(m.fecha));
+  const ingMes = delMes.filter(m=>m.tipo==='ingreso').reduce((a,m)=>a+Number(m.monto),0);
+  const egrMes = delMes.filter(m=>m.tipo==='egreso').reduce((a,m)=>a+Number(m.monto),0);
+  document.getElementById('ingresosMes').textContent = formatMonto(ingMes);
+  document.getElementById('egresosMes').textContent = formatMonto(egrMes);
+
+  renderListaMovimientos(document.getElementById('listaInicioMov'), movimientos.slice(0,6));
+}
+
+// ===================== RENDER: MOVIMIENTOS =====================
+function filtrarMovimientos(f){
+  filtroMovActual = f;
+  document.querySelectorAll('.filtros button').forEach(b=>b.classList.remove('activo'));
+  document.querySelector(`.filtros button[data-filtro="${f}"]`).classList.add('activo');
+  renderMovimientos();
+}
+function renderMovimientos(){
+  const lista = filtroMovActual==='todos' ? movimientos : movimientos.filter(m=>m.tipo===filtroMovActual);
+  renderListaMovimientos(document.getElementById('listaMovimientos'), lista);
+}
+function renderListaMovimientos(cont, lista){
+  if(!lista.length){ cont.innerHTML = '<div class="vacio">Sin movimientos todavía</div>'; return; }
+  cont.innerHTML = lista.map(m=>`
+    <div class="item-mov">
+      <div class="icono ${m.tipo}">${m.tipo==='ingreso' ? '↓' : '↑'}</div>
+      <div class="info">
+        <div class="desc">${escapeHtml(m.descripcion || m.categoria)}</div>
+        <div class="meta">${formatFechaLegible(m.fecha)}</div>
+      </div>
+      <div class="monto ${m.tipo}">${m.tipo==='ingreso'?'+':'-'}${formatMonto(m.monto)}</div>
+      ${m.foto_url ? `<img class="foto-thumb" src="${m.foto_url}" onclick="abrirFoto('${m.foto_url}')">` : ''}
+    </div>
+  `).join('');
+}
+function escapeHtml(str){
+  const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML;
+}
+
+// ===================== RENDER: PRESTAMOS =====================
+function renderPrestamos(){
+  const yoPresto = prestamos.filter(p=>p.tipo==='yo_presto');
+  const mePrestan = prestamos.filter(p=>p.tipo==='me_prestan');
+  document.getElementById('listaYoPresto').innerHTML = renderTarjetasPrestamo(yoPresto, 'deben');
+  document.getElementById('listaMePrestan').innerHTML = renderTarjetasPrestamo(mePrestan, 'debo');
+}
+function renderTarjetasPrestamo(lista, tagTipo){
+  if(!lista.length) return '<div class="vacio">No hay registros</div>';
+  return lista.map(p=>{
+    const pct = p.monto_inicial>0 ? Math.min(100, Math.round((1 - p.saldo_pendiente/p.monto_inicial)*100)) : 100;
+    const tagClass = p.estado==='pagado' ? 'pagado' : tagTipo;
+    const tagTxt = p.estado==='pagado' ? 'Pagado' : (tagTipo==='deben' ? 'Te debe' : 'Le debes');
+    return `
+      <div class="prestamo-card" onclick="mostrarDetallePrestamo('${p.id}')">
+        <div class="fila-top">
+          <span class="contraparte">${escapeHtml(p.contraparte)}</span>
+          <span class="tag ${tagClass}">${tagTxt}</span>
+        </div>
+        <div class="barra"><div class="relleno" style="width:${pct}%"></div></div>
+        <div class="saldo-row">
+          <span>Saldo: ${formatMonto(p.saldo_pendiente)}</span>
+          <span>Inicial: ${formatMonto(p.monto_inicial)}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ===================== DETALLE PRESTAMO =====================
+function mostrarDetallePrestamo(id){
+  const p = prestamos.find(x=>x.id===id);
+  if(!p) return;
+  prestamoAccionActual = { prestamo: p };
+  const esYoPresto = p.tipo === 'yo_presto';
+  const etiquetaAccion = esYoPresto ? 'Cobrar' : 'Pagar';
+
+  document.getElementById('detallePrestamoHeader').innerHTML = `
+    <div class="fila-top">
+      <span class="contraparte">${escapeHtml(p.contraparte)}</span>
+      <span class="tag ${p.estado==='pagado' ? 'pagado' : (esYoPresto?'deben':'debo')}">${p.estado==='pagado' ? 'Pagado' : (esYoPresto ? 'Te debe' : 'Le debes')}</span>
+    </div>
+    <div class="monto-grande">${formatMonto(p.saldo_pendiente)}</div>
+    <div style="color:var(--texto-suave); font-size:13px;">de ${formatMonto(p.monto_inicial)} inicial · desde ${formatFechaLegible(p.fecha_inicio)}</div>
+    ${p.notas ? `<div style="margin-top:8px; font-size:13px;">${escapeHtml(p.notas)}</div>` : ''}
+    ${p.estado!=='pagado' ? `
+      <div class="acciones-prestamo">
+        <button class="btn" style="flex:1" onclick="abrirModalAccion('${p.id}','${esYoPresto?'cobro':'pago'}')">${etiquetaAccion}</button>
+        ${esYoPresto ? `<button class="btn btn-secundario" style="flex:1" onclick="abrirModalAccion('${p.id}','interes')">+ Interés</button>` : ''}
+      </div>
+    ` : ''}
+  `;
+
+  const historial = movimientos.filter(m=>m.prestamo_id===p.id);
+  renderListaMovimientos(document.getElementById('listaHistorialPrestamo'), historial);
+
+  mostrarVista('detallePrestamo');
+}
+
+// ===================== SUBIDA DE FOTO =====================
+async function subirFoto(file){
+  if(!file) return null;
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const nombre = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const { error } = await client.storage.from('sustentos').upload(nombre, file);
+  if(error){ alert('No se pudo subir la foto: ' + error.message); return null; }
+  const { data } = client.storage.from('sustentos').getPublicUrl(nombre);
+  return data.publicUrl;
+}
+
+// ===================== MODAL: NUEVO MOVIMIENTO =====================
+function abrirModalNuevoMovimiento(){
+  document.getElementById('movFecha').value = hoyStr();
+  seleccionarTipoMov('ingreso');
+  abrirModal('modalNuevoMovimiento');
+}
+function seleccionarTipoMov(tipo){
+  document.getElementById('movTipo').value = tipo;
+  document.getElementById('btnTipoIngreso').className = tipo==='ingreso' ? 'sel-ingreso' : '';
+  document.getElementById('btnTipoEgreso').className = tipo==='egreso' ? 'sel-egreso' : '';
+  document.getElementById('bloqueApoyo').style.display = tipo==='egreso' ? 'block' : 'none';
+  if(tipo!=='egreso'){
+    document.getElementById('movTieneApoyo').checked = false;
+    toggleApoyo();
+  }
+}
+function toggleApoyo(){
+  const marcado = document.getElementById('movTieneApoyo').checked;
+  document.getElementById('camposApoyo').style.display = marcado ? 'block' : 'none';
+}
+async function guardarNuevoMovimiento(e){
+  e.preventDefault();
+  const btn = document.getElementById('btnGuardarMov');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  const tipo = document.getElementById('movTipo').value;
+  const monto = parseFloat(document.getElementById('movMonto').value);
+  const descripcion = document.getElementById('movDescripcion').value.trim();
+  const fecha = document.getElementById('movFecha').value;
+  const fotoFile = document.getElementById('movFoto').files[0];
+  const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
+
+  const { data: mov, error } = await client.from('movimientos').insert({
+    tipo, categoria: tipo==='ingreso' ? 'otro_ingreso' : 'gasto',
+    descripcion, monto, fecha, foto_url
+  }).select().single();
+
+  if(error){ btn.disabled=false; btn.textContent='Guardar'; alert(error.message); return; }
+
+  // Si es un egreso con apoyo de alguien más, ese apoyo queda como préstamo pendiente
+  if(tipo==='egreso' && document.getElementById('movTieneApoyo').checked){
+    const apoyoContraparte = document.getElementById('apoyoContraparte').value.trim();
+    const apoyoMonto = parseFloat(document.getElementById('apoyoMonto').value);
+    if(apoyoContraparte && apoyoMonto > 0){
+      const { data: prestamo, error: e2 } = await client.from('prestamos').insert({
+        tipo: 'me_prestan', contraparte: apoyoContraparte,
+        monto_inicial: apoyoMonto, saldo_pendiente: apoyoMonto, fecha_inicio: fecha,
+        notas: `Apoyo para: ${descripcion}`
+      }).select().single();
+      if(!e2){
+        await client.from('movimientos').insert({
+          tipo:'ingreso', categoria:'prestamo_recibido',
+          descripcion: `Préstamo de ${apoyoContraparte} para ${descripcion}`,
+          monto: apoyoMonto, fecha, prestamo_id: prestamo.id
+        });
+      }
+    }
+  }
+
+  btn.disabled = false; btn.textContent = 'Guardar';
+  cerrarModal('modalNuevoMovimiento');
+  await cargarDatos();
+}
+
+// ===================== MODAL: NUEVO PRESTAMO =====================
+function abrirModalNuevoPrestamo(){
+  document.getElementById('prestamoFecha').value = hoyStr();
+  seleccionarTipoPrestamo('yo_presto');
+  abrirModal('modalNuevoPrestamo');
+}
+function seleccionarTipoPrestamo(tipo){
+  document.getElementById('prestamoTipo').value = tipo;
+  document.getElementById('btnPrestamoYoPresto').className = tipo==='yo_presto' ? 'sel-egreso' : '';
+  document.getElementById('btnPrestamoMePrestan').className = tipo==='me_prestan' ? 'sel-ingreso' : '';
+}
+async function guardarNuevoPrestamo(e){
+  e.preventDefault();
+  const btn = document.getElementById('btnGuardarPrestamo');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  const tipo = document.getElementById('prestamoTipo').value;
+  const contraparte = document.getElementById('prestamoContraparte').value.trim();
+  const monto = parseFloat(document.getElementById('prestamoMonto').value);
+  const fecha = document.getElementById('prestamoFecha').value;
+  const notas = document.getElementById('prestamoNotas').value.trim();
+  const fotoFile = document.getElementById('prestamoFoto').files[0];
+  const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
+
+  const { data: prestamo, error } = await client.from('prestamos').insert({
+    tipo, contraparte, monto_inicial: monto, saldo_pendiente: monto, fecha_inicio: fecha, notas
+  }).select().single();
+
+  if(error){ btn.disabled=false; btn.textContent='Guardar'; alert(error.message); return; }
+
+  const esIngreso = tipo === 'me_prestan';
+  await client.from('movimientos').insert({
+    tipo: esIngreso ? 'ingreso' : 'egreso',
+    categoria: esIngreso ? 'prestamo_recibido' : 'prestamo_otorgado',
+    descripcion: `${esIngreso ? 'Préstamo de' : 'Préstamo a'} ${contraparte}`,
+    monto, fecha, foto_url, prestamo_id: prestamo.id
+  });
+
+  btn.disabled = false; btn.textContent = 'Guardar';
+  cerrarModal('modalNuevoPrestamo');
+  await cargarDatos();
+  mostrarVista('prestamos', true);
+}
+
+// ===================== MODAL: ACCION SOBRE PRESTAMO (pago/cobro/interes) =====================
+function abrirModalAccion(prestamoId, accion){
+  const p = prestamos.find(x=>x.id===prestamoId);
+  prestamoAccionActual = { prestamo: p, accion };
+  const titulos = { pago:'Registrar pago', cobro:'Registrar cobro', interes:'Registrar interés' };
+  document.getElementById('tituloAccionPrestamo').textContent = `${titulos[accion]} — ${p.contraparte}`;
+  abrirModal('modalAccionPrestamo');
+}
+async function guardarAccionPrestamo(e){
+  e.preventDefault();
+  const { prestamo, accion } = prestamoAccionActual;
+  const btn = document.getElementById('btnGuardarAccion');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  const monto = parseFloat(document.getElementById('accionMonto').value);
+  const fotoFile = document.getElementById('accionFoto').files[0];
+  const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
+  const fecha = hoyStr();
+
+  const configAccion = {
+    pago:    { tipo:'egreso',  categoria:'pago_prestamo',  desc:`Pago a ${prestamo.contraparte}` },
+    cobro:   { tipo:'ingreso', categoria:'cobro_prestamo', desc:`Cobro a ${prestamo.contraparte}` },
+    interes: { tipo:'ingreso', categoria:'interes_prestamo', desc:`Interés de ${prestamo.contraparte}` },
+  }[accion];
+
+  await client.from('movimientos').insert({
+    tipo: configAccion.tipo, categoria: configAccion.categoria, descripcion: configAccion.desc,
+    monto, fecha, foto_url, prestamo_id: prestamo.id
+  });
+
+  if(accion === 'pago' || accion === 'cobro'){
+    const nuevoSaldo = Math.max(0, Number(prestamo.saldo_pendiente) - monto);
+    await client.from('prestamos').update({
+      saldo_pendiente: nuevoSaldo,
+      estado: nuevoSaldo === 0 ? 'pagado' : 'activo'
+    }).eq('id', prestamo.id);
+  }
+
+  btn.disabled = false; btn.textContent = 'Guardar';
+  cerrarModal('modalAccionPrestamo');
+  await cargarDatos();
+  mostrarDetallePrestamo(prestamo.id);
+}
+
+// ===================== LISTENERS =====================
+document.getElementById('formLogin').addEventListener('submit', manejarLogin);
+document.getElementById('formNuevoMovimiento').addEventListener('submit', guardarNuevoMovimiento);
+document.getElementById('formNuevoPrestamo').addEventListener('submit', guardarNuevoPrestamo);
+document.getElementById('formAccionPrestamo').addEventListener('submit', guardarAccionPrestamo);
+
+revisarSesion();
+</script>
+</body>
+</html>
