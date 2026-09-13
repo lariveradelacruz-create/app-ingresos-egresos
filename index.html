@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" translate="no">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="google" content="notranslate">
 <title>Ingresos y Egresos</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
@@ -83,7 +84,7 @@
   /* lista movimientos */
   .item-mov{
     background:var(--card); border-radius:12px; padding:12px; display:flex; align-items:center; gap:10px;
-    margin-bottom:8px; box-shadow:0 1px 2px rgba(0,0,0,.05);
+    margin-bottom:8px; box-shadow:0 1px 2px rgba(0,0,0,.05); cursor:pointer;
   }
   .item-mov .icono{
     width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center;
@@ -158,6 +159,7 @@
   }
   .tipo-toggle button.sel-ingreso{background:var(--verde-suave); border-color:var(--verde); color:var(--verde);}
   .tipo-toggle button.sel-egreso{background:var(--rojo-suave); border-color:var(--rojo); color:var(--rojo);}
+  .tipo-toggle button:disabled{opacity:.6;}
 
   .foto-preview{width:100%; max-height:220px; object-fit:contain; border-radius:10px; margin-top:8px; display:none; background:#f1f3f9;}
 
@@ -399,6 +401,60 @@
   <img id="fotoGrande" src="">
 </div>
 
+<!-- ============ MODAL: DETALLE MOVIMIENTO ============ -->
+<div class="modal-overlay" id="modalDetalleMovimiento">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalDetalleMovimiento')">✕</button>
+    <h3>Detalle del movimiento</h3>
+    <div id="detalleMovimientoBody"></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: EDITAR PRESTAMO ============ -->
+<div class="modal-overlay" id="modalEditarPrestamo">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalEditarPrestamo')">✕</button>
+    <h3>Editar préstamo</h3>
+    <form id="formEditarPrestamo">
+      <input type="hidden" id="editPrestamoId">
+      <div class="campo">
+        <label>¿Con quién?</label>
+        <input type="text" id="editContraparte" required>
+      </div>
+      <div id="editBloqueInteres" style="display:none;">
+        <div class="campo">
+          <label>Tasa de interés (%) — lineal sobre el monto</label>
+          <input type="number" step="0.01" min="0" id="editTasa" oninput="calcularInteresEdicion()">
+        </div>
+        <div class="campo">
+          <label>Interés</label>
+          <input type="text" id="editInteresCalc" readonly style="background:#eef1f8;">
+        </div>
+        <div class="campo">
+          <label>Plazo</label>
+          <div style="display:flex; gap:8px;">
+            <select id="editPlazoTipo" onchange="actualizarOpcionesPlazoEdicion()">
+              <option value="mensual">Mensual</option>
+              <option value="quincenal">Quincenal</option>
+            </select>
+            <select id="editPlazoCantidad" onchange="calcularVencimientoEdicion()"></select>
+          </div>
+        </div>
+        <div class="campo">
+          <label>Fecha de vencimiento</label>
+          <input type="text" id="editVencimiento" readonly style="background:#eef1f8;">
+          <input type="hidden" id="editVencimientoRaw">
+        </div>
+      </div>
+      <div class="campo">
+        <label>Notas</label>
+        <textarea id="editNotas" rows="2"></textarea>
+      </div>
+      <button type="submit" class="btn">Guardar cambios</button>
+    </form>
+  </div>
+</div>
+
 <script>
 // ===================== CONFIG SUPABASE =====================
 const SB_URL = 'https://tgyzzfdwfwkfoohsxhpr.supabase.co';
@@ -412,6 +468,14 @@ let prestamos = [];
 let filtroMovActual = 'todos';
 let pilaVistas = ['inicio'];
 let prestamoAccionActual = null; // { prestamo, accion }
+let movimientoEditandoId = null;
+
+const CATEGORIA_LABELS = {
+  otro_ingreso: 'Otro ingreso', gasto: 'Gasto',
+  prestamo_recibido: 'Préstamo recibido', prestamo_otorgado: 'Préstamo otorgado',
+  pago_prestamo: 'Pago de préstamo', cobro_prestamo: 'Cobro de préstamo',
+  interes_prestamo: 'Interés de préstamo'
+};
 
 // ===================== UTILIDADES DE FECHA =====================
 function hoyStr(){
@@ -431,6 +495,15 @@ function esDelMesActual(fechaStr){
   const hoy = new Date();
   const [y,m] = fechaStr.split('-').map(Number);
   return y === hoy.getFullYear() && m === (hoy.getMonth()+1);
+}
+function calcularRecordatorio(fechaVencStr){
+  const hoy = parseFechaUTC(hoyStr());
+  const venc = parseFechaUTC(fechaVencStr);
+  const diffDias = Math.round((venc - hoy) / 86400000);
+  if(diffDias < 0) return { texto: `Vencido hace ${Math.abs(diffDias)} día(s)`, urgente: true };
+  if(diffDias === 0) return { texto: 'Vence hoy', urgente: true };
+  if(diffDias <= 7) return { texto: `Vence en ${diffDias} día(s)`, urgente: true };
+  return { texto: `Vence en ${diffDias} día(s)`, urgente: false };
 }
 
 // ===================== UTILIDADES GENERALES =====================
@@ -457,9 +530,15 @@ function cerrarModal(id){
   if(id === 'modalNuevoMovimiento'){
     document.getElementById('formNuevoMovimiento').reset();
     document.getElementById('camposApoyo').style.display = 'none';
+    movimientoEditandoId = null;
+    document.querySelector('#modalNuevoMovimiento h3').textContent = 'Nuevo movimiento';
+    document.getElementById('btnGuardarMov').textContent = 'Guardar';
+    document.getElementById('btnTipoIngreso').disabled = false;
+    document.getElementById('btnTipoEgreso').disabled = false;
   }
   if(id === 'modalNuevoPrestamo') document.getElementById('formNuevoPrestamo').reset();
   if(id === 'modalAccionPrestamo') document.getElementById('formAccionPrestamo').reset();
+  if(id === 'modalEditarPrestamo') document.getElementById('formEditarPrestamo').reset();
   ['movFotoPreview','prestamoFotoPreview','accionFotoPreview'].forEach(p=>{
     const el = document.getElementById(p);
     if(el){ el.style.display='none'; el.src=''; }
@@ -562,17 +641,47 @@ function renderMovimientos(){
 function renderListaMovimientos(cont, lista){
   if(!lista.length){ cont.innerHTML = '<div class="vacio">Sin movimientos todavía</div>'; return; }
   cont.innerHTML = lista.map(m=>`
-    <div class="item-mov">
+    <div class="item-mov" onclick="abrirDetalleMovimiento('${m.id}')">
       <div class="icono ${m.tipo}">${m.tipo==='ingreso' ? '↓' : '↑'}</div>
       <div class="info">
         <div class="desc">${escapeHtml(m.descripcion || m.categoria)}</div>
         <div class="meta">${formatFechaLegible(m.fecha)}</div>
       </div>
       <div class="monto ${m.tipo}">${m.tipo==='ingreso'?'+':'-'}${formatMonto(m.monto)}</div>
-      ${m.foto_url ? `<img class="foto-thumb" src="${m.foto_url}" onclick="abrirFoto('${m.foto_url}')">` : ''}
-      <button class="btn-eliminar" onclick="eliminarMovimiento('${m.id}')" title="Eliminar">🗑</button>
+      ${m.foto_url ? `<img class="foto-thumb" src="${m.foto_url}" onclick="event.stopPropagation(); abrirFoto('${m.foto_url}')">` : ''}
+      <button class="btn-eliminar" onclick="event.stopPropagation(); eliminarMovimiento('${m.id}')" title="Eliminar">🗑</button>
     </div>
   `).join('');
+}
+
+// ===================== DETALLE MOVIMIENTO (modal) =====================
+function abrirDetalleMovimiento(id){
+  const m = movimientos.find(x=>x.id===id);
+  if(!m) return;
+  const p = m.prestamo_id ? prestamos.find(x=>x.id===m.prestamo_id) : null;
+
+  let recordatorioHtml = '';
+  if(p && p.fecha_vencimiento && p.estado !== 'pagado'){
+    const r = calcularRecordatorio(p.fecha_vencimiento);
+    recordatorioHtml = `<div style="margin-top:10px; padding:8px 10px; border-radius:8px; background:${r.urgente ? 'var(--rojo-suave)' : '#eef1f8'}; color:${r.urgente ? 'var(--rojo)' : 'var(--texto-suave)'}; font-size:13px;">📅 ${r.texto}</div>`;
+  }
+
+  document.getElementById('detalleMovimientoBody').innerHTML = `
+    <div class="card" style="margin-bottom:14px;">
+      <div class="etiqueta">${m.tipo==='ingreso' ? 'Ingreso' : 'Egreso'} · ${CATEGORIA_LABELS[m.categoria] || m.categoria}</div>
+      <div class="valor ${m.tipo==='ingreso' ? 'verde' : 'rojo'}">${m.tipo==='ingreso'?'+':'-'}${formatMonto(m.monto)}</div>
+    </div>
+    <div class="campo"><label>Descripción</label><div>${escapeHtml(m.descripcion || '-')}</div></div>
+    <div class="campo"><label>Fecha</label><div>${formatFechaLegible(m.fecha)}</div></div>
+    ${p ? `<div class="campo"><label>Préstamo relacionado</label><div>${escapeHtml(p.contraparte)} · saldo ${formatMonto(p.saldo_pendiente)}</div></div>` : ''}
+    ${recordatorioHtml}
+    ${m.foto_url ? `<img src="${m.foto_url}" style="width:100%; border-radius:10px; margin-top:10px; cursor:pointer;" onclick="abrirFoto('${m.foto_url}')">` : ''}
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn btn-secundario" style="flex:1" onclick="abrirEdicionMovimiento('${m.id}')">✏️ Editar</button>
+      <button class="btn btn-rojo" style="flex:1" onclick="cerrarModal('modalDetalleMovimiento'); eliminarMovimiento('${m.id}');">🗑 Eliminar</button>
+    </div>
+  `;
+  abrirModal('modalDetalleMovimiento');
 }
 function escapeHtml(str){
   const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML;
@@ -602,7 +711,7 @@ function renderTarjetasPrestamo(lista, tagTipo){
           <span>Saldo: ${formatMonto(p.saldo_pendiente)}</span>
           <span>Inicial: ${formatMonto(p.monto_inicial)}${p.tasa_interes ? ` + ${p.tasa_interes}%` : ''}</span>
         </div>
-        ${p.fecha_vencimiento ? `<div class="saldo-row"><span>Vence: ${formatFechaLegible(p.fecha_vencimiento)}</span></div>` : ''}
+        ${p.fecha_vencimiento && p.estado!=='pagado' ? (r=>`<div class="saldo-row" style="color:${r.urgente?'var(--rojo)':'var(--texto-suave)'}; font-weight:${r.urgente?'600':'400'};"><span>📅 ${r.texto}</span></div>`)(calcularRecordatorio(p.fecha_vencimiento)) : ''}
       </div>
     `;
   }).join('');
@@ -626,6 +735,7 @@ function mostrarDetallePrestamo(id){
       de ${formatMonto(p.monto_inicial)} inicial${p.tasa_interes ? ` + ${p.tasa_interes}% interés (${formatMonto(p.interes)})` : ''} · desde ${formatFechaLegible(p.fecha_inicio)}
       ${p.fecha_vencimiento ? `<br>Vence: ${formatFechaLegible(p.fecha_vencimiento)} (${p.plazo_cantidad} ${p.plazo_tipo==='mensual' ? 'mes(es)' : 'quincena(s)'})` : ''}
     </div>
+    ${p.fecha_vencimiento && p.estado!=='pagado' ? (r=>`<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:${r.urgente?'var(--rojo-suave)':'#eef1f8'}; color:${r.urgente?'var(--rojo)':'var(--texto-suave)'}; font-size:13px;">📅 ${r.texto}</div>`)(calcularRecordatorio(p.fecha_vencimiento)) : ''}
     ${p.notas ? `<div style="margin-top:8px; font-size:13px;">${escapeHtml(p.notas)}</div>` : ''}
     ${p.estado!=='pagado' ? `
       <div class="acciones-prestamo">
@@ -633,7 +743,10 @@ function mostrarDetallePrestamo(id){
         ${esYoPresto ? `<button class="btn btn-secundario" style="flex:1" onclick="abrirModalAccion('${p.id}','interes')">+ Interés</button>` : ''}
       </div>
     ` : ''}
-    <button style="margin-top:10px; width:100%; background:none; border:none; color:var(--rojo); font-size:13px; padding:6px;" onclick="eliminarPrestamo('${p.id}')">🗑 Eliminar préstamo</button>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button style="flex:1; background:none; border:1px solid var(--borde); color:var(--azul); font-size:13px; padding:8px; border-radius:8px;" onclick="abrirModalEditarPrestamo('${p.id}')">✏️ Editar</button>
+      <button style="flex:1; background:none; border:1px solid var(--borde); color:var(--rojo); font-size:13px; padding:8px; border-radius:8px;" onclick="eliminarPrestamo('${p.id}')">🗑 Eliminar</button>
+    </div>
   `;
 
   const historial = movimientos.filter(m=>m.prestamo_id===p.id);
@@ -712,15 +825,59 @@ function toggleApoyo(){
   const marcado = document.getElementById('movTieneApoyo').checked;
   document.getElementById('camposApoyo').style.display = marcado ? 'block' : 'none';
 }
+function abrirEdicionMovimiento(id){
+  const m = movimientos.find(x=>x.id===id);
+  if(!m) return;
+  cerrarModal('modalDetalleMovimiento');
+  movimientoEditandoId = id;
+  document.querySelector('#modalNuevoMovimiento h3').textContent = 'Editar movimiento';
+  document.getElementById('btnGuardarMov').textContent = 'Guardar cambios';
+  seleccionarTipoMov(m.tipo);
+  document.getElementById('btnTipoIngreso').disabled = true;
+  document.getElementById('btnTipoEgreso').disabled = true;
+  document.getElementById('bloqueApoyo').style.display = 'none';
+  document.getElementById('movMonto').value = m.monto;
+  document.getElementById('movDescripcion').value = m.descripcion || '';
+  document.getElementById('movFecha').value = m.fecha;
+  const preview = document.getElementById('movFotoPreview');
+  if(m.foto_url){ preview.src = m.foto_url; preview.style.display = 'block'; }
+  else { preview.style.display = 'none'; }
+  abrirModal('modalNuevoMovimiento');
+}
+
 async function guardarNuevoMovimiento(e){
   e.preventDefault();
   const btn = document.getElementById('btnGuardarMov');
-  btn.disabled = true; btn.textContent = 'Guardando...';
-  const tipo = document.getElementById('movTipo').value;
   const monto = parseFloat(document.getElementById('movMonto').value);
   const descripcion = document.getElementById('movDescripcion').value.trim();
   const fecha = document.getElementById('movFecha').value;
   const fotoFile = document.getElementById('movFoto').files[0];
+
+  if(movimientoEditandoId){
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    const original = movimientos.find(x=>x.id===movimientoEditandoId);
+    const foto_url = fotoFile ? await subirFoto(fotoFile) : original.foto_url;
+    const { error } = await client.from('movimientos')
+      .update({ descripcion, monto, fecha, foto_url }).eq('id', movimientoEditandoId);
+    btn.disabled = false; btn.textContent = 'Guardar cambios';
+    if(error){ alert(error.message); return; }
+
+    if(original.prestamo_id && (original.categoria === 'pago_prestamo' || original.categoria === 'cobro_prestamo')){
+      const p = prestamos.find(x=>x.id===original.prestamo_id);
+      if(p){
+        const delta = monto - Number(original.monto);
+        const nuevoSaldo = Math.max(0, Number(p.saldo_pendiente) - delta);
+        await client.from('prestamos').update({ saldo_pendiente: nuevoSaldo, estado: nuevoSaldo===0 ? 'pagado' : 'activo' }).eq('id', p.id);
+      }
+    }
+
+    cerrarModal('modalNuevoMovimiento');
+    await cargarDatos();
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  const tipo = document.getElementById('movTipo').value;
   const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
 
   const { data: mov, error } = await client.from('movimientos').insert({
@@ -838,6 +995,78 @@ async function guardarNuevoPrestamo(e){
   mostrarVista('prestamos', true);
 }
 
+// ===================== MODAL: EDITAR PRESTAMO =====================
+function abrirModalEditarPrestamo(id){
+  const p = prestamos.find(x=>x.id===id);
+  if(!p) return;
+  document.getElementById('editPrestamoId').value = p.id;
+  document.getElementById('editContraparte').value = p.contraparte;
+  document.getElementById('editNotas').value = p.notas || '';
+  const esYoPresto = p.tipo === 'yo_presto';
+  document.getElementById('editBloqueInteres').style.display = esYoPresto ? 'block' : 'none';
+  if(esYoPresto){
+    document.getElementById('editTasa').value = p.tasa_interes || 0;
+    document.getElementById('editPlazoTipo').value = p.plazo_tipo || 'mensual';
+    actualizarOpcionesPlazoEdicion();
+    if(p.plazo_cantidad) document.getElementById('editPlazoCantidad').value = p.plazo_cantidad;
+    calcularInteresEdicion();
+    calcularVencimientoEdicion();
+  }
+  abrirModal('modalEditarPrestamo');
+}
+function calcularInteresEdicion(){
+  const p = prestamos.find(x=>x.id===document.getElementById('editPrestamoId').value);
+  const tasa = parseFloat(document.getElementById('editTasa').value) || 0;
+  const interes = p ? Number(p.monto_inicial) * (tasa/100) : 0;
+  document.getElementById('editInteresCalc').value = formatMonto(interes);
+}
+function actualizarOpcionesPlazoEdicion(){
+  const tipo = document.getElementById('editPlazoTipo').value;
+  const opciones = tipo==='mensual' ? [1,2,3] : [1,2,3,4,5,6];
+  const unidad = tipo==='mensual' ? 'mes' : 'quincena';
+  const sel = document.getElementById('editPlazoCantidad');
+  sel.innerHTML = opciones.map(n=>`<option value="${n}">${n} ${unidad}${n===1?'':(tipo==='mensual'?'es':'s')}</option>`).join('');
+  calcularVencimientoEdicion();
+}
+function calcularVencimientoEdicion(){
+  const p = prestamos.find(x=>x.id===document.getElementById('editPrestamoId').value);
+  if(!p) return;
+  const tipo = document.getElementById('editPlazoTipo').value;
+  const cant = parseInt(document.getElementById('editPlazoCantidad').value) || 0;
+  if(!cant) return;
+  const venc = tipo==='mensual' ? sumarMeses(p.fecha_inicio, cant) : sumarDias(p.fecha_inicio, cant*15);
+  document.getElementById('editVencimientoRaw').value = venc;
+  document.getElementById('editVencimiento').value = formatFechaLegible(venc);
+}
+async function guardarEdicionPrestamo(e){
+  e.preventDefault();
+  const id = document.getElementById('editPrestamoId').value;
+  const p = prestamos.find(x=>x.id===id);
+  if(!p) return;
+  const contraparte = document.getElementById('editContraparte').value.trim();
+  const notas = document.getElementById('editNotas').value.trim();
+  const esYoPresto = p.tipo === 'yo_presto';
+
+  const cambios = { contraparte, notas };
+  if(esYoPresto){
+    const tasa_interes = parseFloat(document.getElementById('editTasa').value) || 0;
+    const nuevoInteres = Number(p.monto_inicial) * (tasa_interes/100);
+    const delta = nuevoInteres - Number(p.interes || 0);
+    cambios.tasa_interes = tasa_interes;
+    cambios.interes = nuevoInteres;
+    cambios.saldo_pendiente = Math.max(0, Number(p.saldo_pendiente) + delta);
+    cambios.plazo_tipo = document.getElementById('editPlazoTipo').value;
+    cambios.plazo_cantidad = parseInt(document.getElementById('editPlazoCantidad').value) || null;
+    cambios.fecha_vencimiento = document.getElementById('editVencimientoRaw').value || null;
+  }
+
+  const { error } = await client.from('prestamos').update(cambios).eq('id', id);
+  if(error){ alert(error.message); return; }
+  cerrarModal('modalEditarPrestamo');
+  await cargarDatos();
+  mostrarDetallePrestamo(id);
+}
+
 // ===================== MODAL: ACCION SOBRE PRESTAMO (pago/cobro/interes) =====================
 function abrirModalAccion(prestamoId, accion){
   const p = prestamos.find(x=>x.id===prestamoId);
@@ -887,6 +1116,7 @@ document.getElementById('formLogin').addEventListener('submit', manejarLogin);
 document.getElementById('formNuevoMovimiento').addEventListener('submit', guardarNuevoMovimiento);
 document.getElementById('formNuevoPrestamo').addEventListener('submit', guardarNuevoPrestamo);
 document.getElementById('formAccionPrestamo').addEventListener('submit', guardarAccionPrestamo);
+document.getElementById('formEditarPrestamo').addEventListener('submit', guardarEdicionPrestamo);
 
 revisarSesion();
 </script>
