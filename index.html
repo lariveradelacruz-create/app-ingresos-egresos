@@ -120,6 +120,7 @@
   .tag{font-size:11px; padding:3px 8px; border-radius:20px; font-weight:600;}
   .tag.deben{background:var(--verde-suave); color:var(--verde);}
   .tag.debo{background:var(--rojo-suave); color:var(--rojo);}
+  .tag.inversion{background:#e0e7ff; color:#4338ca;}
   .tag.pagado{background:#e5e7eb; color:var(--texto-suave);}
   .barra{height:6px; background:#eef1f8; border-radius:6px; overflow:hidden; margin:8px 0 6px;}
   .barra .relleno{height:100%; background:var(--azul);}
@@ -242,6 +243,8 @@
       <div id="listaYoPresto"></div>
       <div class="seccion-titulo">Debo (te prestaron)</div>
       <div id="listaMePrestan"></div>
+      <div class="seccion-titulo">Inversiones</div>
+      <div id="listaInversion"></div>
     </div>
 
     <!-- ---- DETALLE PRESTAMO ---- -->
@@ -320,11 +323,13 @@
       <div class="tipo-toggle">
         <button type="button" id="btnPrestamoYoPresto" class="sel-egreso" onclick="seleccionarTipoPrestamo('yo_presto')">Yo presto</button>
         <button type="button" id="btnPrestamoMePrestan" onclick="seleccionarTipoPrestamo('me_prestan')">Me prestan</button>
+        <button type="button" id="btnPrestamoInversion" onclick="seleccionarTipoPrestamo('inversion')">Inversión</button>
       </div>
       <input type="hidden" id="prestamoTipo" value="yo_presto">
       <input type="hidden" id="prestamoVencimientoRaw">
+      <input type="hidden" id="prestamoMetodo" value="lineal">
       <div class="campo">
-        <label>¿A quién le prestas? (ej. Juan)</label>
+        <label id="labelContraparte">¿A quién le prestas? (ej. Juan)</label>
         <input type="text" id="prestamoContraparte" required>
       </div>
       <div class="campo">
@@ -332,12 +337,38 @@
         <input type="number" step="0.01" min="0.01" id="prestamoMonto" oninput="calcularInteres()" required>
       </div>
       <div id="bloqueInteres" style="display:none;">
-        <div class="campo">
-          <label>Tasa de interés (%) — lineal sobre el monto</label>
-          <input type="number" step="0.01" min="0" id="prestamoTasa" oninput="calcularInteres()" placeholder="Ej: 10">
+        <div class="tipo-toggle">
+          <button type="button" id="btnMetodoLineal" class="sel-ingreso" onclick="seleccionarMetodoInteres('lineal')">Interés lineal (corto plazo)</button>
+          <button type="button" id="btnMetodoFrances" onclick="seleccionarMetodoInteres('frances')">Cuota fija (hasta 60 meses)</button>
         </div>
         <div class="campo">
-          <label>Interés</label>
+          <label id="labelTasa">Tasa de interés (%) — lineal sobre el monto</label>
+          <input type="number" step="0.01" min="0" id="prestamoTasa" oninput="calcularInteres()" placeholder="Ej: 10">
+        </div>
+        <div id="bloquePlazoLineal">
+          <div class="campo">
+            <label>Plazo</label>
+            <div style="display:flex; gap:8px;">
+              <select id="prestamoPlazoTipo" onchange="actualizarOpcionesPlazo()">
+                <option value="mensual">Mensual</option>
+                <option value="quincenal">Quincenal</option>
+              </select>
+              <select id="prestamoPlazoCantidad" onchange="calcularVencimiento()"></select>
+            </div>
+          </div>
+        </div>
+        <div id="bloquePlazoFrances" style="display:none;">
+          <div class="campo">
+            <label>Plazo en meses (hasta 60)</label>
+            <input type="number" min="1" max="60" step="1" id="prestamoPlazoMeses" oninput="calcularInteres()" placeholder="Ej: 24">
+          </div>
+          <div class="campo">
+            <label>Cuota mensual</label>
+            <input type="text" id="prestamoCuotaCalc" readonly value="S/ 0.00" style="background:#eef1f8;">
+          </div>
+        </div>
+        <div class="campo">
+          <label>Interés total</label>
           <input type="text" id="prestamoInteresCalc" readonly value="S/ 0.00" style="background:#eef1f8;">
         </div>
       </div>
@@ -345,17 +376,7 @@
         <label>Fecha de inicio</label>
         <input type="date" id="prestamoFecha" required oninput="calcularVencimiento()">
       </div>
-      <div id="bloquePlazo" style="display:none;">
-        <div class="campo">
-          <label>Plazo</label>
-          <div style="display:flex; gap:8px;">
-            <select id="prestamoPlazoTipo" onchange="actualizarOpcionesPlazo()">
-              <option value="mensual">Mensual</option>
-              <option value="quincenal">Quincenal</option>
-            </select>
-            <select id="prestamoPlazoCantidad" onchange="calcularVencimiento()"></select>
-          </div>
-        </div>
+      <div id="bloqueVencimiento" style="display:none;">
         <div class="campo">
           <label>Fecha de vencimiento</label>
           <input type="text" id="prestamoVencimiento" readonly style="background:#eef1f8;">
@@ -421,6 +442,9 @@
         <label>¿Con quién?</label>
         <input type="text" id="editContraparte" required>
       </div>
+      <div id="editHintFrances" style="display:none; margin-bottom:14px; padding:10px 12px; border-radius:8px; background:#eef1f8; color:var(--texto-suave); font-size:13px;">
+        Este préstamo tiene cuota fija (método francés). La tasa, el plazo y la cuota no se editan aquí — solo el nombre y las notas.
+      </div>
       <div id="editBloqueInteres" style="display:none;">
         <div class="campo">
           <label>Tasa de interés (%) — lineal sobre el monto</label>
@@ -455,6 +479,58 @@
   </div>
 </div>
 
+<!-- ============ MODAL: CONVERTIR INVERSION A PRESTAMO ============ -->
+<div class="modal-overlay" id="modalConvertirInversion">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalConvertirInversion')">✕</button>
+    <h3>Convertir a préstamo</h3>
+    <form id="formConvertirInversion">
+      <input type="hidden" id="convPrestamoId">
+      <input type="hidden" id="convMetodo" value="lineal">
+      <div class="tipo-toggle">
+        <button type="button" id="btnConvMetodoLineal" class="sel-ingreso" onclick="seleccionarMetodoConversion('lineal')">Interés lineal (corto plazo)</button>
+        <button type="button" id="btnConvMetodoFrances" onclick="seleccionarMetodoConversion('frances')">Cuota fija (hasta 60 meses)</button>
+      </div>
+      <div class="campo">
+        <label id="convLabelTasa">Tasa de interés (%) — lineal sobre el saldo</label>
+        <input type="number" step="0.01" min="0" id="convTasa" oninput="calcularConversion()">
+      </div>
+      <div id="convBloquePlazoLineal">
+        <div class="campo">
+          <label>Plazo</label>
+          <div style="display:flex; gap:8px;">
+            <select id="convPlazoTipo" onchange="actualizarOpcionesPlazoConversion()">
+              <option value="mensual">Mensual</option>
+              <option value="quincenal">Quincenal</option>
+            </select>
+            <select id="convPlazoCantidad" onchange="calcularConversion()"></select>
+          </div>
+        </div>
+      </div>
+      <div id="convBloquePlazoFrances" style="display:none;">
+        <div class="campo">
+          <label>Plazo en meses (hasta 60)</label>
+          <input type="number" min="1" max="60" step="1" id="convPlazoMeses" oninput="calcularConversion()">
+        </div>
+        <div class="campo">
+          <label>Cuota mensual</label>
+          <input type="text" id="convCuotaCalc" readonly value="S/ 0.00" style="background:#eef1f8;">
+        </div>
+      </div>
+      <div class="campo">
+        <label>Interés</label>
+        <input type="text" id="convInteresCalc" readonly value="S/ 0.00" style="background:#eef1f8;">
+      </div>
+      <div class="campo">
+        <label>Fecha de vencimiento (desde hoy)</label>
+        <input type="text" id="convVencimiento" readonly style="background:#eef1f8;">
+        <input type="hidden" id="convVencimientoRaw">
+      </div>
+      <button type="submit" class="btn">Convertir a préstamo</button>
+    </form>
+  </div>
+</div>
+
 <script>
 // ===================== CONFIG SUPABASE =====================
 const SB_URL = 'https://tgyzzfdwfwkfoohsxhpr.supabase.co';
@@ -474,7 +550,8 @@ const CATEGORIA_LABELS = {
   otro_ingreso: 'Otro ingreso', gasto: 'Gasto',
   prestamo_recibido: 'Préstamo recibido', prestamo_otorgado: 'Préstamo otorgado',
   pago_prestamo: 'Pago de préstamo', cobro_prestamo: 'Cobro de préstamo',
-  interes_prestamo: 'Interés de préstamo'
+  interes_prestamo: 'Interés de préstamo',
+  inversion_realizada: 'Inversión realizada', retorno_inversion: 'Retorno de inversión'
 };
 
 // ===================== UTILIDADES DE FECHA =====================
@@ -538,7 +615,11 @@ function cerrarModal(id){
   }
   if(id === 'modalNuevoPrestamo') document.getElementById('formNuevoPrestamo').reset();
   if(id === 'modalAccionPrestamo') document.getElementById('formAccionPrestamo').reset();
-  if(id === 'modalEditarPrestamo') document.getElementById('formEditarPrestamo').reset();
+  if(id === 'modalEditarPrestamo'){
+    document.getElementById('formEditarPrestamo').reset();
+    document.getElementById('editHintFrances').style.display = 'none';
+  }
+  if(id === 'modalConvertirInversion') document.getElementById('formConvertirInversion').reset();
   ['movFotoPreview','prestamoFotoPreview','accionFotoPreview'].forEach(p=>{
     const el = document.getElementById(p);
     if(el){ el.style.display='none'; el.src=''; }
@@ -691,15 +772,17 @@ function escapeHtml(str){
 function renderPrestamos(){
   const yoPresto = prestamos.filter(p=>p.tipo==='yo_presto');
   const mePrestan = prestamos.filter(p=>p.tipo==='me_prestan');
+  const inversion = prestamos.filter(p=>p.tipo==='inversion');
   document.getElementById('listaYoPresto').innerHTML = renderTarjetasPrestamo(yoPresto, 'deben');
   document.getElementById('listaMePrestan').innerHTML = renderTarjetasPrestamo(mePrestan, 'debo');
+  document.getElementById('listaInversion').innerHTML = renderTarjetasPrestamo(inversion, 'inversion');
 }
 function renderTarjetasPrestamo(lista, tagTipo){
   if(!lista.length) return '<div class="vacio">No hay registros</div>';
   return lista.map(p=>{
     const pct = p.monto_inicial>0 ? Math.min(100, Math.round((1 - p.saldo_pendiente/p.monto_inicial)*100)) : 100;
     const tagClass = p.estado==='pagado' ? 'pagado' : tagTipo;
-    const tagTxt = p.estado==='pagado' ? 'Pagado' : (tagTipo==='deben' ? 'Te debe' : 'Le debes');
+    const tagTxt = p.estado==='pagado' ? (tagTipo==='inversion' ? 'Recuperado' : 'Pagado') : (tagTipo==='deben' ? 'Te debe' : (tagTipo==='debo' ? 'Le debes' : 'Invertido'));
     return `
       <div class="prestamo-card" onclick="mostrarDetallePrestamo('${p.id}')">
         <div class="fila-top">
@@ -711,6 +794,7 @@ function renderTarjetasPrestamo(lista, tagTipo){
           <span>Saldo: ${formatMonto(p.saldo_pendiente)}</span>
           <span>Inicial: ${formatMonto(p.monto_inicial)}${p.tasa_interes ? ` + ${p.tasa_interes}%` : ''}</span>
         </div>
+        ${p.cuota_mensual ? `<div class="saldo-row"><span>Cuota mensual: ${formatMonto(p.cuota_mensual)}</span></div>` : ''}
         ${p.fecha_vencimiento && p.estado!=='pagado' ? (r=>`<div class="saldo-row" style="color:${r.urgente?'var(--rojo)':'var(--texto-suave)'}; font-weight:${r.urgente?'600':'400'};"><span>📅 ${r.texto}</span></div>`)(calcularRecordatorio(p.fecha_vencimiento)) : ''}
       </div>
     `;
@@ -723,25 +807,31 @@ function mostrarDetallePrestamo(id){
   if(!p) return;
   prestamoAccionActual = { prestamo: p };
   const esYoPresto = p.tipo === 'yo_presto';
-  const etiquetaAccion = esYoPresto ? 'Cobrar' : 'Pagar';
+  const esInversion = p.tipo === 'inversion';
+  const tagClass = p.estado==='pagado' ? 'pagado' : (esYoPresto ? 'deben' : (esInversion ? 'inversion' : 'debo'));
+  const tagTxt = p.estado==='pagado' ? (esInversion ? 'Recuperado' : 'Pagado') : (esYoPresto ? 'Te debe' : (esInversion ? 'Invertido' : 'Le debes'));
+  const etiquetaAccion = esYoPresto ? 'Cobrar' : (esInversion ? 'Registrar retorno' : 'Pagar');
+  const accionKey = esYoPresto ? 'cobro' : (esInversion ? 'retorno' : 'pago');
 
   document.getElementById('detallePrestamoHeader').innerHTML = `
     <div class="fila-top">
       <span class="contraparte">${escapeHtml(p.contraparte)}</span>
-      <span class="tag ${p.estado==='pagado' ? 'pagado' : (esYoPresto?'deben':'debo')}">${p.estado==='pagado' ? 'Pagado' : (esYoPresto ? 'Te debe' : 'Le debes')}</span>
+      <span class="tag ${tagClass}">${tagTxt}</span>
     </div>
     <div class="monto-grande">${formatMonto(p.saldo_pendiente)}</div>
     <div style="color:var(--texto-suave); font-size:13px;">
       de ${formatMonto(p.monto_inicial)} inicial${p.tasa_interes ? ` + ${p.tasa_interes}% interés (${formatMonto(p.interes)})` : ''} · desde ${formatFechaLegible(p.fecha_inicio)}
-      ${p.fecha_vencimiento ? `<br>Vence: ${formatFechaLegible(p.fecha_vencimiento)} (${p.plazo_cantidad} ${p.plazo_tipo==='mensual' ? 'mes(es)' : 'quincena(s)'})` : ''}
+      ${p.cuota_mensual ? `<br>Cuota mensual: ${formatMonto(p.cuota_mensual)} (${p.metodo_interes==='frances' ? 'método francés' : 'lineal'})` : ''}
+      ${p.fecha_vencimiento ? `<br>Vence: ${formatFechaLegible(p.fecha_vencimiento)}${p.plazo_cantidad ? ` (${p.plazo_cantidad} ${p.plazo_tipo==='mensual' ? 'mes(es)' : 'quincena(s)'})` : ''}` : ''}
     </div>
     ${p.fecha_vencimiento && p.estado!=='pagado' ? (r=>`<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:${r.urgente?'var(--rojo-suave)':'#eef1f8'}; color:${r.urgente?'var(--rojo)':'var(--texto-suave)'}; font-size:13px;">📅 ${r.texto}</div>`)(calcularRecordatorio(p.fecha_vencimiento)) : ''}
     ${p.notas ? `<div style="margin-top:8px; font-size:13px;">${escapeHtml(p.notas)}</div>` : ''}
     ${p.estado!=='pagado' ? `
       <div class="acciones-prestamo">
-        <button class="btn" style="flex:1" onclick="abrirModalAccion('${p.id}','${esYoPresto?'cobro':'pago'}')">${etiquetaAccion}</button>
+        <button class="btn" style="flex:1" onclick="abrirModalAccion('${p.id}','${accionKey}')">${etiquetaAccion}</button>
         ${esYoPresto ? `<button class="btn btn-secundario" style="flex:1" onclick="abrirModalAccion('${p.id}','interes')">+ Interés</button>` : ''}
       </div>
+      ${esInversion ? `<button style="margin-top:8px; width:100%; background:none; border:1px solid var(--azul); color:var(--azul); font-size:13px; padding:8px; border-radius:8px;" onclick="abrirModalConvertirInversion('${p.id}')">🔄 Convertir a préstamo</button>` : ''}
     ` : ''}
     <div style="display:flex; gap:8px; margin-top:10px;">
       <button style="flex:1; background:none; border:1px solid var(--borde); color:var(--azul); font-size:13px; padding:8px; border-radius:8px;" onclick="abrirModalEditarPrestamo('${p.id}')">✏️ Editar</button>
@@ -762,16 +852,17 @@ async function eliminarMovimiento(id){
 
   if(mov.prestamo_id){
     const p = prestamos.find(x=>x.id===mov.prestamo_id);
-    const esFundacional = mov.categoria === 'prestamo_recibido' || mov.categoria === 'prestamo_otorgado';
+    const esFundacional = mov.categoria === 'prestamo_recibido' || mov.categoria === 'prestamo_otorgado' || mov.categoria === 'inversion_realizada';
     if(esFundacional){
-      const nombre = p ? p.contraparte : 'este préstamo';
-      if(!confirm(`Este movimiento es el origen del préstamo con ${nombre}. Se eliminará el préstamo completo junto con todo su historial (pagos, cobros, interés). ¿Continuar?`)) return;
+      const nombre = p ? p.contraparte : 'este registro';
+      const tipoTexto = p && p.tipo === 'inversion' ? 'la inversión' : 'el préstamo';
+      if(!confirm(`Este movimiento es el origen de ${tipoTexto} con ${nombre}. Se eliminará por completo junto con todo su historial. ¿Continuar?`)) return;
       await eliminarPrestamo(mov.prestamo_id, true);
       return;
     }
     if(!confirm('¿Eliminar este movimiento?')) return;
     await client.from('movimientos').delete().eq('id', id);
-    if(p && (mov.categoria === 'pago_prestamo' || mov.categoria === 'cobro_prestamo')){
+    if(p && (mov.categoria === 'pago_prestamo' || mov.categoria === 'cobro_prestamo' || mov.categoria === 'retorno_inversion')){
       const nuevoSaldo = Number(p.saldo_pendiente) + Number(mov.monto);
       await client.from('prestamos').update({ saldo_pendiente: nuevoSaldo, estado: 'activo' }).eq('id', p.id);
     }
@@ -918,23 +1009,56 @@ function abrirModalNuevoPrestamo(){
   seleccionarTipoPrestamo('yo_presto');
   abrirModal('modalNuevoPrestamo');
 }
+const LABELS_CONTRAPARTE = {
+  yo_presto: '¿A quién le prestas? (ej. Juan)',
+  me_prestan: '¿Quién te presta? (ej. Esposa)',
+  inversion: '¿En qué o con quién inviertes?'
+};
+
 function seleccionarTipoPrestamo(tipo){
   document.getElementById('prestamoTipo').value = tipo;
   document.getElementById('btnPrestamoYoPresto').className = tipo==='yo_presto' ? 'sel-egreso' : '';
   document.getElementById('btnPrestamoMePrestan').className = tipo==='me_prestan' ? 'sel-ingreso' : '';
+  document.getElementById('btnPrestamoInversion').className = tipo==='inversion' ? 'sel-egreso' : '';
+  document.getElementById('labelContraparte').textContent = LABELS_CONTRAPARTE[tipo];
   const esYoPresto = tipo === 'yo_presto';
   document.getElementById('bloqueInteres').style.display = esYoPresto ? 'block' : 'none';
-  document.getElementById('bloquePlazo').style.display = esYoPresto ? 'block' : 'none';
-  if(esYoPresto){
-    actualizarOpcionesPlazo();
-    calcularInteres();
-  }
+  document.getElementById('bloqueVencimiento').style.display = esYoPresto ? 'block' : 'none';
+  if(esYoPresto) seleccionarMetodoInteres('lineal');
+}
+function seleccionarMetodoInteres(metodo){
+  document.getElementById('prestamoMetodo').value = metodo;
+  document.getElementById('btnMetodoLineal').className = metodo==='lineal' ? 'sel-ingreso' : '';
+  document.getElementById('btnMetodoFrances').className = metodo==='frances' ? 'sel-ingreso' : '';
+  document.getElementById('labelTasa').textContent = metodo==='lineal'
+    ? 'Tasa de interés (%) — lineal sobre el monto'
+    : 'Tasa de interés mensual (%) — método francés';
+  document.getElementById('bloquePlazoLineal').style.display = metodo==='lineal' ? 'block' : 'none';
+  document.getElementById('bloquePlazoFrances').style.display = metodo==='frances' ? 'block' : 'none';
+  if(metodo==='lineal') actualizarOpcionesPlazo();
+  calcularInteres();
+}
+function calcularCuotaFrances(monto, tasaMensualPct, n){
+  if(!n || n<=0) return 0;
+  const i = tasaMensualPct/100;
+  if(i === 0) return monto/n;
+  return monto * i / (1 - Math.pow(1+i, -n));
 }
 function calcularInteres(){
   const monto = parseFloat(document.getElementById('prestamoMonto').value) || 0;
   const tasa = parseFloat(document.getElementById('prestamoTasa').value) || 0;
-  const interes = monto * (tasa/100);
-  document.getElementById('prestamoInteresCalc').value = formatMonto(interes);
+  const metodo = document.getElementById('prestamoMetodo').value;
+  if(metodo === 'frances'){
+    const n = parseInt(document.getElementById('prestamoPlazoMeses').value) || 0;
+    const cuota = calcularCuotaFrances(monto, tasa, n);
+    const interes = Math.max(0, (cuota*n) - monto);
+    document.getElementById('prestamoCuotaCalc').value = formatMonto(cuota);
+    document.getElementById('prestamoInteresCalc').value = formatMonto(interes);
+    calcularVencimiento();
+  } else {
+    const interes = monto * (tasa/100);
+    document.getElementById('prestamoInteresCalc').value = formatMonto(interes);
+  }
 }
 function actualizarOpcionesPlazo(){
   const tipo = document.getElementById('prestamoPlazoTipo').value;
@@ -946,10 +1070,19 @@ function actualizarOpcionesPlazo(){
 }
 function calcularVencimiento(){
   const fecha = document.getElementById('prestamoFecha').value;
-  const tipo = document.getElementById('prestamoPlazoTipo').value;
-  const cant = parseInt(document.getElementById('prestamoPlazoCantidad').value) || 0;
-  if(!fecha || !cant) return;
-  const venc = tipo==='mensual' ? sumarMeses(fecha, cant) : sumarDias(fecha, cant*15);
+  if(!fecha) return;
+  const metodo = document.getElementById('prestamoMetodo').value;
+  let venc;
+  if(metodo === 'frances'){
+    const n = parseInt(document.getElementById('prestamoPlazoMeses').value) || 0;
+    if(!n) return;
+    venc = sumarMeses(fecha, n);
+  } else {
+    const tipo = document.getElementById('prestamoPlazoTipo').value;
+    const cant = parseInt(document.getElementById('prestamoPlazoCantidad').value) || 0;
+    if(!cant) return;
+    venc = tipo==='mensual' ? sumarMeses(fecha, cant) : sumarDias(fecha, cant*15);
+  }
   document.getElementById('prestamoVencimientoRaw').value = venc;
   document.getElementById('prestamoVencimiento').value = formatFechaLegible(venc);
 }
@@ -967,25 +1100,39 @@ async function guardarNuevoPrestamo(e){
   const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
 
   const esYoPresto = tipo === 'yo_presto';
+  const metodo_interes = esYoPresto ? document.getElementById('prestamoMetodo').value : null;
   const tasa_interes = esYoPresto ? (parseFloat(document.getElementById('prestamoTasa').value) || 0) : null;
-  const interes = esYoPresto ? monto * (tasa_interes/100) : 0;
-  const plazo_tipo = esYoPresto ? document.getElementById('prestamoPlazoTipo').value : null;
-  const plazo_cantidad = esYoPresto ? (parseInt(document.getElementById('prestamoPlazoCantidad').value) || null) : null;
-  const fecha_vencimiento = esYoPresto ? (document.getElementById('prestamoVencimientoRaw').value || null) : null;
+
+  let interes = 0, plazo_tipo = null, plazo_cantidad = null, fecha_vencimiento = null, cuota_mensual = null;
+  if(esYoPresto){
+    fecha_vencimiento = document.getElementById('prestamoVencimientoRaw').value || null;
+    if(metodo_interes === 'frances'){
+      plazo_tipo = 'mensual';
+      plazo_cantidad = parseInt(document.getElementById('prestamoPlazoMeses').value) || null;
+      cuota_mensual = calcularCuotaFrances(monto, tasa_interes, plazo_cantidad || 0);
+      interes = Math.max(0, (cuota_mensual * (plazo_cantidad||0)) - monto);
+    } else {
+      plazo_tipo = document.getElementById('prestamoPlazoTipo').value;
+      plazo_cantidad = parseInt(document.getElementById('prestamoPlazoCantidad').value) || null;
+      interes = monto * (tasa_interes/100);
+    }
+  }
   const saldoInicial = monto + interes;
 
   const { data: prestamo, error } = await client.from('prestamos').insert({
     tipo, contraparte, monto_inicial: monto, saldo_pendiente: saldoInicial, fecha_inicio: fecha, notas,
-    tasa_interes, interes, plazo_tipo, plazo_cantidad, fecha_vencimiento
+    tasa_interes, interes, metodo_interes, cuota_mensual, plazo_tipo, plazo_cantidad, fecha_vencimiento
   }).select().single();
 
   if(error){ btn.disabled=false; btn.textContent='Guardar'; alert(error.message); return; }
 
   const esIngreso = tipo === 'me_prestan';
+  const categoriaFundacional = tipo === 'me_prestan' ? 'prestamo_recibido' : (tipo === 'inversion' ? 'inversion_realizada' : 'prestamo_otorgado');
+  const descFundacional = tipo === 'me_prestan' ? `Préstamo de ${contraparte}` : (tipo === 'inversion' ? `Inversión en ${contraparte}` : `Préstamo a ${contraparte}`);
   await client.from('movimientos').insert({
     tipo: esIngreso ? 'ingreso' : 'egreso',
-    categoria: esIngreso ? 'prestamo_recibido' : 'prestamo_otorgado',
-    descripcion: `${esIngreso ? 'Préstamo de' : 'Préstamo a'} ${contraparte}`,
+    categoria: categoriaFundacional,
+    descripcion: descFundacional,
     monto, fecha, foto_url, prestamo_id: prestamo.id
   });
 
@@ -1002,8 +1149,10 @@ function abrirModalEditarPrestamo(id){
   document.getElementById('editPrestamoId').value = p.id;
   document.getElementById('editContraparte').value = p.contraparte;
   document.getElementById('editNotas').value = p.notas || '';
-  const esYoPresto = p.tipo === 'yo_presto';
+  const esFrances = p.tipo === 'yo_presto' && p.metodo_interes === 'frances';
+  const esYoPresto = p.tipo === 'yo_presto' && !esFrances;
   document.getElementById('editBloqueInteres').style.display = esYoPresto ? 'block' : 'none';
+  document.getElementById('editHintFrances').style.display = esFrances ? 'block' : 'none';
   if(esYoPresto){
     document.getElementById('editTasa').value = p.tasa_interes || 0;
     document.getElementById('editPlazoTipo').value = p.plazo_tipo || 'mensual';
@@ -1067,11 +1216,100 @@ async function guardarEdicionPrestamo(e){
   mostrarDetallePrestamo(id);
 }
 
+// ===================== MODAL: CONVERTIR INVERSION A PRESTAMO =====================
+function abrirModalConvertirInversion(id){
+  const p = prestamos.find(x=>x.id===id);
+  if(!p) return;
+  document.getElementById('convPrestamoId').value = p.id;
+  seleccionarMetodoConversion('lineal');
+  abrirModal('modalConvertirInversion');
+}
+function seleccionarMetodoConversion(metodo){
+  document.getElementById('convMetodo').value = metodo;
+  document.getElementById('btnConvMetodoLineal').className = metodo==='lineal' ? 'sel-ingreso' : '';
+  document.getElementById('btnConvMetodoFrances').className = metodo==='frances' ? 'sel-ingreso' : '';
+  document.getElementById('convLabelTasa').textContent = metodo==='lineal'
+    ? 'Tasa de interés (%) — lineal sobre el saldo'
+    : 'Tasa de interés mensual (%) — método francés';
+  document.getElementById('convBloquePlazoLineal').style.display = metodo==='lineal' ? 'block' : 'none';
+  document.getElementById('convBloquePlazoFrances').style.display = metodo==='frances' ? 'block' : 'none';
+  if(metodo==='lineal') actualizarOpcionesPlazoConversion();
+  calcularConversion();
+}
+function actualizarOpcionesPlazoConversion(){
+  const tipo = document.getElementById('convPlazoTipo').value;
+  const opciones = tipo==='mensual' ? [1,2,3] : [1,2,3,4,5,6];
+  const unidad = tipo==='mensual' ? 'mes' : 'quincena';
+  const sel = document.getElementById('convPlazoCantidad');
+  sel.innerHTML = opciones.map(n=>`<option value="${n}">${n} ${unidad}${n===1?'':(tipo==='mensual'?'es':'s')}</option>`).join('');
+  calcularConversion();
+}
+function calcularConversion(){
+  const p = prestamos.find(x=>x.id===document.getElementById('convPrestamoId').value);
+  if(!p) return;
+  const monto = Number(p.saldo_pendiente);
+  const tasa = parseFloat(document.getElementById('convTasa').value) || 0;
+  const metodo = document.getElementById('convMetodo').value;
+  let venc = null;
+  if(metodo === 'frances'){
+    const n = parseInt(document.getElementById('convPlazoMeses').value) || 0;
+    const cuota = calcularCuotaFrances(monto, tasa, n);
+    const interes = Math.max(0, (cuota*n) - monto);
+    document.getElementById('convCuotaCalc').value = formatMonto(cuota);
+    document.getElementById('convInteresCalc').value = formatMonto(interes);
+    if(n) venc = sumarMeses(hoyStr(), n);
+  } else {
+    const interes = monto * (tasa/100);
+    document.getElementById('convInteresCalc').value = formatMonto(interes);
+    const tipo = document.getElementById('convPlazoTipo').value;
+    const cant = parseInt(document.getElementById('convPlazoCantidad').value) || 0;
+    if(cant) venc = tipo==='mensual' ? sumarMeses(hoyStr(), cant) : sumarDias(hoyStr(), cant*15);
+  }
+  if(venc){
+    document.getElementById('convVencimientoRaw').value = venc;
+    document.getElementById('convVencimiento').value = formatFechaLegible(venc);
+  }
+}
+async function guardarConversionInversion(e){
+  e.preventDefault();
+  const id = document.getElementById('convPrestamoId').value;
+  const p = prestamos.find(x=>x.id===id);
+  if(!p) return;
+  const metodo = document.getElementById('convMetodo').value;
+  const tasa = parseFloat(document.getElementById('convTasa').value) || 0;
+  const monto = Number(p.saldo_pendiente);
+
+  let interes = 0, plazo_tipo = null, plazo_cantidad = null, cuota_mensual = null;
+  if(metodo === 'frances'){
+    plazo_tipo = 'mensual';
+    plazo_cantidad = parseInt(document.getElementById('convPlazoMeses').value) || null;
+    cuota_mensual = calcularCuotaFrances(monto, tasa, plazo_cantidad || 0);
+    interes = Math.max(0, (cuota_mensual*(plazo_cantidad||0)) - monto);
+  } else {
+    plazo_tipo = document.getElementById('convPlazoTipo').value;
+    plazo_cantidad = parseInt(document.getElementById('convPlazoCantidad').value) || null;
+    interes = monto * (tasa/100);
+  }
+  const fecha_vencimiento = document.getElementById('convVencimientoRaw').value || null;
+  const notas = (p.notas ? p.notas + ' — ' : '') + `Convertido a préstamo el ${hoyStr()}`;
+
+  const { error } = await client.from('prestamos').update({
+    tipo: 'yo_presto', tasa_interes: tasa, interes, metodo_interes: metodo,
+    cuota_mensual, plazo_tipo, plazo_cantidad, fecha_vencimiento,
+    saldo_pendiente: monto + interes, notas
+  }).eq('id', id);
+
+  if(error){ alert(error.message); return; }
+  cerrarModal('modalConvertirInversion');
+  await cargarDatos();
+  mostrarDetallePrestamo(id);
+}
+
 // ===================== MODAL: ACCION SOBRE PRESTAMO (pago/cobro/interes) =====================
 function abrirModalAccion(prestamoId, accion){
   const p = prestamos.find(x=>x.id===prestamoId);
   prestamoAccionActual = { prestamo: p, accion };
-  const titulos = { pago:'Registrar pago', cobro:'Registrar cobro', interes:'Registrar interés' };
+  const titulos = { pago:'Registrar pago', cobro:'Registrar cobro', retorno:'Registrar retorno', interes:'Registrar interés' };
   document.getElementById('tituloAccionPrestamo').textContent = `${titulos[accion]} — ${p.contraparte}`;
   abrirModal('modalAccionPrestamo');
 }
@@ -1089,6 +1327,7 @@ async function guardarAccionPrestamo(e){
   const configAccion = {
     pago:    { tipo:'egreso',  categoria:'pago_prestamo',  desc:`Pago a ${prestamo.contraparte}` },
     cobro:   { tipo:'ingreso', categoria:'cobro_prestamo', desc:`Cobro a ${prestamo.contraparte}` },
+    retorno: { tipo:'ingreso', categoria:'retorno_inversion', desc:`Retorno de inversión en ${prestamo.contraparte}` },
     interes: { tipo:'ingreso', categoria:'interes_prestamo', desc:`Interés de ${prestamo.contraparte}` },
   }[accion];
 
@@ -1097,7 +1336,7 @@ async function guardarAccionPrestamo(e){
     monto, fecha, foto_url, prestamo_id: prestamo.id
   });
 
-  if(accion === 'pago' || accion === 'cobro'){
+  if(accion === 'pago' || accion === 'cobro' || accion === 'retorno'){
     const nuevoSaldo = Math.max(0, Number(prestamo.saldo_pendiente) - monto);
     await client.from('prestamos').update({
       saldo_pendiente: nuevoSaldo,
@@ -1117,6 +1356,7 @@ document.getElementById('formNuevoMovimiento').addEventListener('submit', guarda
 document.getElementById('formNuevoPrestamo').addEventListener('submit', guardarNuevoPrestamo);
 document.getElementById('formAccionPrestamo').addEventListener('submit', guardarAccionPrestamo);
 document.getElementById('formEditarPrestamo').addEventListener('submit', guardarEdicionPrestamo);
+document.getElementById('formConvertirInversion').addEventListener('submit', guardarConversionInversion);
 
 revisarSesion();
 </script>

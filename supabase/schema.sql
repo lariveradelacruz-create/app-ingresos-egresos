@@ -8,14 +8,16 @@
 -- ============================================================
 create table if not exists prestamos (
   id uuid primary key default gen_random_uuid(),
-  tipo text not null check (tipo in ('me_prestan', 'yo_presto')),
-  contraparte text not null,              -- ej. "Esposa", "Juan Pérez"
+  tipo text not null check (tipo in ('me_prestan', 'yo_presto', 'inversion')),
+  contraparte text not null,              -- ej. "Esposa", "Juan Pérez", nombre del negocio
   monto_inicial numeric(12,2) not null,
   saldo_pendiente numeric(12,2) not null, -- para 'yo_presto' incluye el interés (monto + interes)
-  tasa_interes numeric(5,2),              -- % lineal sobre el monto, solo 'yo_presto'
-  interes numeric(12,2) default 0,        -- interés calculado = monto_inicial * tasa_interes/100
+  tasa_interes numeric(5,2),              -- % (lineal: sobre el monto; frances: mensual), solo 'yo_presto'
+  interes numeric(12,2) default 0,        -- interés total calculado
+  metodo_interes text check (metodo_interes in ('lineal', 'frances')), -- solo 'yo_presto'
+  cuota_mensual numeric(12,2),            -- solo metodo 'frances'
   plazo_tipo text check (plazo_tipo in ('mensual', 'quincenal')),
-  plazo_cantidad integer,                 -- cantidad de meses/quincenas, hasta 3 meses
+  plazo_cantidad integer,                 -- lineal: hasta 3 meses / 6 quincenas; frances: hasta 60 meses
   fecha_vencimiento date,
   fecha_inicio date not null default current_date,
   estado text not null default 'activo' check (estado in ('activo', 'pagado')),
