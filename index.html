@@ -78,6 +78,10 @@
   .card .valor.verde{color:var(--verde);}
   .card .valor.rojo{color:var(--rojo);}
   .card .valor.azul{color:var(--azul);}
+  .desglose-cuentas{margin-top:8px; padding-top:8px; border-top:1px solid var(--borde); display:flex; flex-wrap:wrap; gap:6px 14px;}
+  .desglose-cuentas .fila-cuenta{font-size:12px; color:var(--texto-suave); display:flex; gap:4px;}
+  .desglose-cuentas .fila-cuenta b{color:var(--texto); font-weight:600;}
+  .link-cuentas{background:none; border:none; color:var(--azul); font-size:12px; padding:0 0 12px; display:block;}
 
   .seccion-titulo{font-size:14px; font-weight:600; color:var(--texto-suave); margin:18px 0 8px; text-transform:uppercase; letter-spacing:.03em;}
 
@@ -212,6 +216,7 @@
         <div class="card wide">
           <div class="etiqueta">Efectivo disponible</div>
           <div class="valor azul" id="saldoTotal">S/ 0.00</div>
+          <div id="desgloseCuentasPersonal" class="desglose-cuentas"></div>
         </div>
         <div class="card">
           <div class="etiqueta">Ingresos del mes</div>
@@ -222,6 +227,7 @@
           <div class="valor rojo" id="egresosMes">S/ 0.00</div>
         </div>
       </div>
+      <button class="link-cuentas" onclick="abrirModalCuentas('personal')">⚙️ Gestionar cuentas</button>
 
       <div id="seccionProximos" style="display:none;">
         <div class="seccion-titulo">📅 Próximos programados</div>
@@ -268,6 +274,7 @@
         <div class="card wide">
           <div class="etiqueta">Saldo del negocio</div>
           <div class="valor azul" id="saldoNegocio">S/ 0.00</div>
+          <div id="desgloseCuentasNegocio" class="desglose-cuentas"></div>
         </div>
         <div class="card">
           <div class="etiqueta">Ingresos del mes</div>
@@ -278,6 +285,7 @@
           <div class="valor rojo" id="egresosNegocioMes">S/ 0.00</div>
         </div>
       </div>
+      <button class="link-cuentas" onclick="abrirModalCuentas('negocio')">⚙️ Gestionar cuentas</button>
       <div class="seccion-titulo">Eventos</div>
       <div id="listaEventos"></div>
     </div>
@@ -325,6 +333,10 @@
       <div class="campo">
         <label>Fecha</label>
         <input type="date" id="movFecha" required>
+      </div>
+      <div class="campo">
+        <label>Cuenta (¿dónde está/estará este dinero?)</label>
+        <select id="movCuenta" required></select>
       </div>
       <div class="campo">
         <label>Foto de sustento (opcional)</label>
@@ -409,6 +421,10 @@
         <label>Notas (opcional)</label>
         <textarea id="prestamoNotas" rows="2"></textarea>
       </div>
+      <div class="campo" id="bloqueCuentaPrestamo">
+        <label id="labelCuentaPrestamo">Cuenta (¿de dónde sale el dinero?)</label>
+        <select id="prestamoCuenta"></select>
+      </div>
       <div class="campo">
         <label>Foto de sustento (opcional)</label>
         <input type="file" accept="image/*" id="prestamoFoto" onchange="previsualizarFoto(this,'prestamoFotoPreview')">
@@ -430,6 +446,10 @@
         <input type="number" step="0.01" min="0.01" id="accionMonto" required>
       </div>
       <div class="campo">
+        <label>Cuenta</label>
+        <select id="accionCuenta"></select>
+      </div>
+      <div class="campo">
         <label>Foto de sustento (opcional)</label>
         <input type="file" accept="image/*" id="accionFoto" onchange="previsualizarFoto(this,'accionFotoPreview')">
         <img class="foto-preview" id="accionFotoPreview">
@@ -443,6 +463,40 @@
 <div class="modal-overlay" id="modalFoto" onclick="cerrarModal('modalFoto')">
   <button class="modal-cerrar">✕</button>
   <img id="fotoGrande" src="">
+</div>
+
+<!-- ============ MODAL: GESTIONAR CUENTAS ============ -->
+<div class="modal-overlay" id="modalCuentas">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalCuentas')">✕</button>
+    <h3 id="tituloModalCuentas">Cuentas</h3>
+    <div id="listaCuentasAdmin" style="margin-bottom:16px;"></div>
+    <form id="formNuevaCuenta">
+      <input type="hidden" id="nuevaCuentaContexto">
+      <div class="campo">
+        <label>Nueva cuenta (ej. BCP, Interbank, Yape)</label>
+        <input type="text" id="nuevaCuentaNombre" placeholder="Nombre de la cuenta" required>
+      </div>
+      <button type="submit" class="btn">+ Agregar cuenta</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ MODAL: ELEGIR CUENTA AL CONFIRMAR ============ -->
+<div class="modal-overlay" id="modalElegirCuentaConfirmar">
+  <div class="modal-box">
+    <button class="modal-cerrar" onclick="cerrarModal('modalElegirCuentaConfirmar')">✕</button>
+    <h3>¿De qué cuenta?</h3>
+    <p style="color:var(--texto-suave); font-size:14px; margin-top:-10px;">Antes de confirmar, dime dónde entró o salió este dinero.</p>
+    <form id="formElegirCuentaConfirmar">
+      <input type="hidden" id="confirmCuentaMovId">
+      <div class="campo">
+        <label>Cuenta</label>
+        <select id="confirmCuentaSelect" required></select>
+      </div>
+      <button type="submit" class="btn">Confirmar</button>
+    </form>
+  </div>
 </div>
 
 <!-- ============ MODAL: NUEVO EVENTO ============ -->
@@ -644,6 +698,7 @@ let sesion = null;
 let movimientos = [];
 let prestamos = [];
 let eventos = [];
+let cuentas = [];
 let filtroMovActual = 'todos';
 let pilaVistas = ['inicio'];
 let prestamoAccionActual = null; // { prestamo, accion }
@@ -730,6 +785,8 @@ function cerrarModal(id){
   if(id === 'modalPreguntaApoyo') document.getElementById('formPreguntaApoyo').reset();
   if(id === 'modalNuevoEvento') document.getElementById('formNuevoEvento').reset();
   if(id === 'modalEditarEvento') document.getElementById('formEditarEvento').reset();
+  if(id === 'modalCuentas') document.getElementById('formNuevaCuenta').reset();
+  if(id === 'modalElegirCuentaConfirmar') document.getElementById('formElegirCuentaConfirmar').reset();
   ['movFotoPreview','prestamoFotoPreview','accionFotoPreview'].forEach(p=>{
     const el = document.getElementById(p);
     if(el){ el.style.display='none'; el.src=''; }
@@ -767,19 +824,88 @@ async function iniciarApp(){
 
 // ===================== CARGA DE DATOS =====================
 async function cargarDatos(){
-  const [{ data: movs, error: e1 }, { data: prest, error: e2 }, { data: evs, error: e3 }] = await Promise.all([
+  const [{ data: movs, error: e1 }, { data: prest, error: e2 }, { data: evs, error: e3 }, { data: cts, error: e4 }] = await Promise.all([
     client.from('movimientos').select('*').order('fecha', { ascending:false }).order('created_at', { ascending:false }).limit(300),
     client.from('prestamos').select('*').order('created_at', { ascending:false }),
-    client.from('eventos').select('*').order('fecha', { ascending:false })
+    client.from('eventos').select('*').order('fecha', { ascending:false }),
+    client.from('cuentas').select('*').order('contexto').order('orden')
   ]);
-  if(e1) console.error(e1); if(e2) console.error(e2); if(e3) console.error(e3);
+  if(e1) console.error(e1); if(e2) console.error(e2); if(e3) console.error(e3); if(e4) console.error(e4);
   movimientos = movs || [];
   prestamos = prest || [];
   eventos = evs || [];
+  cuentas = cts || [];
   renderInicio();
   renderMovimientos();
   renderPrestamos();
   renderNegocio();
+}
+
+// ===================== CUENTAS =====================
+function cuentasDeContexto(ctx){ return cuentas.filter(c=>c.contexto===ctx); }
+function saldoDeCuenta(cuentaId){
+  return movimientos.filter(m=>m.cuenta_id===cuentaId && m.estado!=='programado')
+    .reduce((a,m)=> a + (m.tipo==='ingreso' ? Number(m.monto) : -Number(m.monto)), 0);
+}
+function poblarSelectCuentas(selectId, contexto, seleccionadaId){
+  const sel = document.getElementById(selectId);
+  const lista = cuentasDeContexto(contexto);
+  sel.innerHTML = lista.map(c=>`<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('');
+  if(seleccionadaId) sel.value = seleccionadaId;
+}
+function renderDesgloseCuentas(contId, contexto){
+  const lista = cuentasDeContexto(contexto);
+  document.getElementById(contId).innerHTML = lista.map(c=>
+    `<div class="fila-cuenta">${escapeHtml(c.nombre)}: <b>${formatMonto(saldoDeCuenta(c.id))}</b></div>`
+  ).join('');
+}
+function abrirModalCuentas(contexto){
+  document.getElementById('tituloModalCuentas').textContent = contexto==='negocio' ? 'Cuentas del negocio' : 'Cuentas personales';
+  document.getElementById('nuevaCuentaContexto').value = contexto;
+  renderListaCuentasAdmin(contexto);
+  abrirModal('modalCuentas');
+}
+function renderListaCuentasAdmin(contexto){
+  const lista = cuentasDeContexto(contexto);
+  const cont = document.getElementById('listaCuentasAdmin');
+  if(!lista.length){ cont.innerHTML = '<div class="vacio">Sin cuentas todavía</div>'; return; }
+  cont.innerHTML = lista.map(c=>`
+    <div class="item-mov">
+      <div class="info">
+        <div class="desc">${escapeHtml(c.nombre)}</div>
+        <div class="meta">${formatMonto(saldoDeCuenta(c.id))}</div>
+      </div>
+      <button class="btn-eliminar" onclick="renombrarCuenta('${c.id}')" title="Renombrar">✏️</button>
+      <button class="btn-eliminar" onclick="eliminarCuenta('${c.id}')" title="Eliminar">🗑</button>
+    </div>
+  `).join('');
+}
+async function renombrarCuenta(id){
+  const c = cuentas.find(x=>x.id===id);
+  if(!c) return;
+  const nuevo = prompt('Nuevo nombre de la cuenta:', c.nombre);
+  if(!nuevo || !nuevo.trim()) return;
+  await client.from('cuentas').update({ nombre: nuevo.trim() }).eq('id', id);
+  await cargarDatos();
+  abrirModalCuentas(c.contexto);
+}
+async function eliminarCuenta(id){
+  const c = cuentas.find(x=>x.id===id);
+  if(!c) return;
+  if(!confirm(`¿Eliminar la cuenta "${c.nombre}"? Los movimientos que la usaban quedarán sin cuenta asignada.`)) return;
+  await client.from('cuentas').delete().eq('id', id);
+  await cargarDatos();
+  abrirModalCuentas(c.contexto);
+}
+async function guardarNuevaCuenta(e){
+  e.preventDefault();
+  const contexto = document.getElementById('nuevaCuentaContexto').value;
+  const nombre = document.getElementById('nuevaCuentaNombre').value.trim();
+  if(!nombre) return;
+  await client.from('cuentas').insert({ nombre, contexto, orden: cuentasDeContexto(contexto).length + 1 });
+  document.getElementById('nuevaCuentaNombre').value = '';
+  await cargarDatos();
+  abrirModalCuentas(contexto);
 }
 
 // ===================== NAVEGACION =====================
@@ -820,6 +946,7 @@ function renderInicio(){
   const egrMes = delMes.filter(m=>m.tipo==='egreso').reduce((a,m)=>a+Number(m.monto),0);
   document.getElementById('ingresosMes').textContent = formatMonto(ingMes);
   document.getElementById('egresosMes').textContent = formatMonto(egrMes);
+  renderDesgloseCuentas('desgloseCuentasPersonal', 'personal');
 
   renderListaMovimientos(document.getElementById('listaInicioMov'), confirmados.slice(0,6));
 
@@ -839,6 +966,7 @@ function renderNegocio(){
   const egrMes = delMes.filter(m=>m.tipo==='egreso').reduce((a,m)=>a+Number(m.monto),0);
   document.getElementById('ingresosNegocioMes').textContent = formatMonto(ingMes);
   document.getElementById('egresosNegocioMes').textContent = formatMonto(egrMes);
+  renderDesgloseCuentas('desgloseCuentasNegocio', 'negocio');
 
   const cont = document.getElementById('listaEventos');
   if(!eventos.length){ cont.innerHTML = '<div class="vacio">Sin eventos todavía</div>'; return; }
@@ -926,6 +1054,7 @@ function abrirDetalleMovimiento(id){
     </div>
     <div class="campo"><label>Descripción</label><div>${escapeHtml(m.descripcion || '-')}</div></div>
     <div class="campo"><label>Fecha</label><div>${formatFechaLegible(m.fecha)}</div></div>
+    ${m.cuenta_id ? (c=>c ? `<div class="campo"><label>Cuenta</label><div>${escapeHtml(c.nombre)}</div></div>` : '')(cuentas.find(x=>x.id===m.cuenta_id)) : ''}
     ${p ? `<div class="campo"><label>Préstamo relacionado</label><div>${escapeHtml(p.contraparte)} · saldo ${formatMonto(p.saldo_pendiente)}</div></div>` : ''}
     ${ev ? `<div class="campo"><label>Evento</label><div>${escapeHtml(ev.nombre)}</div></div>` : ''}
     ${recordatorioHtml}
@@ -985,6 +1114,7 @@ function abrirModalNuevoMovimientoEvento(eventoId, tipoPreset){
   seleccionarTipoMov(tipoPreset);
   document.getElementById('movContexto').value = 'negocio';
   document.getElementById('movEventoId').value = eventoId;
+  poblarSelectCuentas('movCuenta', 'negocio');
   abrirModal('modalNuevoMovimiento');
 }
 
@@ -1163,9 +1293,28 @@ async function eliminarPrestamo(id, saltarConfirm){
 async function confirmarMovimiento(id){
   const mov = movimientos.find(m=>m.id===id);
   if(!mov || mov.estado !== 'programado') return;
+
+  if(!mov.cuenta_id){
+    document.getElementById('confirmCuentaMovId').value = mov.id;
+    poblarSelectCuentas('confirmCuentaSelect', mov.contexto || 'personal');
+    abrirModal('modalElegirCuentaConfirmar');
+    return;
+  }
+  await ejecutarConfirmacion(mov);
+}
+async function guardarCuentaYConfirmar(e){
+  e.preventDefault();
+  const id = document.getElementById('confirmCuentaMovId').value;
+  const cuenta_id = document.getElementById('confirmCuentaSelect').value;
+  await client.from('movimientos').update({ cuenta_id }).eq('id', id);
+  cerrarModal('modalElegirCuentaConfirmar');
+  const mov = movimientos.find(m=>m.id===id);
+  if(mov){ mov.cuenta_id = cuenta_id; await ejecutarConfirmacion(mov); }
+}
+async function ejecutarConfirmacion(mov){
   if(!confirm('¿Confirmar que este movimiento ya ocurrió?')) return;
 
-  await client.from('movimientos').update({ estado: 'confirmado' }).eq('id', id);
+  await client.from('movimientos').update({ estado: 'confirmado' }).eq('id', mov.id);
 
   const esSaldoAfectante = mov.categoria === 'pago_prestamo' || mov.categoria === 'cobro_prestamo' || mov.categoria === 'retorno_inversion' || mov.categoria === 'cuota_credito';
   if(mov.prestamo_id && esSaldoAfectante){
@@ -1204,6 +1353,7 @@ function abrirModalNuevoMovimiento(){
   seleccionarTipoMov('ingreso');
   document.getElementById('movContexto').value = 'personal';
   document.getElementById('movEventoId').value = '';
+  poblarSelectCuentas('movCuenta', 'personal');
   abrirModal('modalNuevoMovimiento');
 }
 function seleccionarTipoMov(tipo){
@@ -1226,6 +1376,7 @@ function abrirEdicionMovimiento(id){
   document.getElementById('movFecha').value = m.fecha;
   document.getElementById('movContexto').value = m.contexto || 'personal';
   document.getElementById('movEventoId').value = m.evento_id || '';
+  poblarSelectCuentas('movCuenta', m.contexto || 'personal', m.cuenta_id);
   const preview = document.getElementById('movFotoPreview');
   if(m.foto_url){ preview.src = m.foto_url; preview.style.display = 'block'; }
   else { preview.style.display = 'none'; }
@@ -1245,8 +1396,9 @@ async function guardarNuevoMovimiento(e){
     const original = movimientos.find(x=>x.id===movimientoEditandoId);
     const foto_url = fotoFile ? await subirFoto(fotoFile) : original.foto_url;
     const nuevoEstado = calcularEstadoPorFecha(fecha);
+    const cuenta_id = document.getElementById('movCuenta').value || null;
     const { error } = await client.from('movimientos')
-      .update({ descripcion, monto, fecha, foto_url, estado: nuevoEstado }).eq('id', movimientoEditandoId);
+      .update({ descripcion, monto, fecha, foto_url, estado: nuevoEstado, cuenta_id }).eq('id', movimientoEditandoId);
     btn.disabled = false; btn.textContent = 'Guardar cambios';
     if(error){ alert(error.message); return; }
 
@@ -1276,6 +1428,7 @@ async function guardarNuevoMovimiento(e){
   const tipo = document.getElementById('movTipo').value;
   const contexto = document.getElementById('movContexto').value || 'personal';
   const evento_id = document.getElementById('movEventoId').value || null;
+  const cuenta_id = document.getElementById('movCuenta').value || null;
   const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
   const categoria = contexto === 'negocio'
     ? (tipo==='ingreso' ? 'ingreso_evento' : 'gasto_evento')
@@ -1283,7 +1436,7 @@ async function guardarNuevoMovimiento(e){
 
   const { data: mov, error } = await client.from('movimientos').insert({
     tipo, categoria, descripcion, monto, fecha, foto_url,
-    estado: calcularEstadoPorFecha(fecha), contexto, evento_id
+    estado: calcularEstadoPorFecha(fecha), contexto, evento_id, cuenta_id
   }).select().single();
 
   if(error){ btn.disabled=false; btn.textContent='Guardar'; alert(error.message); return; }
@@ -1303,6 +1456,7 @@ function preguntarApoyo(mov){
   document.getElementById('apoyoMovId').value = mov.id;
   window.apoyoMovDescripcion = mov.descripcion || mov.categoria;
   window.apoyoMovFecha = mov.fecha;
+  window.apoyoMovCuentaId = mov.cuenta_id || null;
   abrirModal('modalPreguntaApoyo');
 }
 async function guardarPreguntaApoyo(e){
@@ -1324,7 +1478,8 @@ async function guardarPreguntaApoyo(e){
   await client.from('movimientos').insert({
     tipo:'ingreso', categoria:'prestamo_recibido',
     descripcion: `Préstamo de ${contraparte} para ${descripcion}`,
-    monto, fecha, prestamo_id: prestamo.id, estado: calcularEstadoPorFecha(fecha)
+    monto, fecha, prestamo_id: prestamo.id, estado: calcularEstadoPorFecha(fecha),
+    cuenta_id: window.apoyoMovCuentaId || null
   });
 
   await cargarDatos();
@@ -1354,6 +1509,11 @@ function seleccionarTipoPrestamo(tipo){
   document.getElementById('bloqueInteres').style.display = usaInteres ? 'block' : 'none';
   document.getElementById('bloqueVencimiento').style.display = usaInteres ? 'block' : 'none';
   if(usaInteres) seleccionarMetodoInteres(tipo==='credito' ? 'frances' : 'lineal');
+
+  document.getElementById('bloqueCuentaPrestamo').style.display = tipo==='credito' ? 'none' : 'block';
+  document.getElementById('labelCuentaPrestamo').textContent = tipo==='me_prestan'
+    ? 'Cuenta (¿a dónde entra el dinero?)' : 'Cuenta (¿de dónde sale el dinero?)';
+  if(tipo!=='credito') poblarSelectCuentas('prestamoCuenta', 'personal');
 }
 function seleccionarMetodoInteres(metodo){
   document.getElementById('prestamoMetodo').value = metodo;
@@ -1484,11 +1644,12 @@ async function guardarNuevoPrestamo(e){
     const esIngreso = tipo === 'me_prestan';
     const categoriaFundacional = tipo === 'me_prestan' ? 'prestamo_recibido' : (tipo === 'inversion' ? 'inversion_realizada' : 'prestamo_otorgado');
     const descFundacional = tipo === 'me_prestan' ? `Préstamo de ${contraparte}` : (tipo === 'inversion' ? `Inversión en ${contraparte}` : `Préstamo a ${contraparte}`);
+    const cuenta_id = document.getElementById('prestamoCuenta').value || null;
     await client.from('movimientos').insert({
       tipo: esIngreso ? 'ingreso' : 'egreso',
       categoria: categoriaFundacional,
       descripcion: descFundacional,
-      monto, fecha, foto_url, prestamo_id: prestamo.id, estado: calcularEstadoPorFecha(fecha)
+      monto, fecha, foto_url, prestamo_id: prestamo.id, estado: calcularEstadoPorFecha(fecha), cuenta_id
     });
   }
 
@@ -1667,6 +1828,7 @@ function abrirModalAccion(prestamoId, accion){
   prestamoAccionActual = { prestamo: p, accion };
   const titulos = { pago:'Registrar pago', cobro:'Registrar cobro', retorno:'Registrar retorno', interes:'Registrar interés' };
   document.getElementById('tituloAccionPrestamo').textContent = `${titulos[accion]} — ${p.contraparte}`;
+  poblarSelectCuentas('accionCuenta', 'personal');
   abrirModal('modalAccionPrestamo');
 }
 async function guardarAccionPrestamo(e){
@@ -1676,6 +1838,7 @@ async function guardarAccionPrestamo(e){
   btn.disabled = true; btn.textContent = 'Guardando...';
 
   const monto = parseFloat(document.getElementById('accionMonto').value);
+  const cuenta_id = document.getElementById('accionCuenta').value || null;
   const fotoFile = document.getElementById('accionFoto').files[0];
   const foto_url = fotoFile ? await subirFoto(fotoFile) : null;
   const fecha = hoyStr();
@@ -1689,7 +1852,7 @@ async function guardarAccionPrestamo(e){
 
   await client.from('movimientos').insert({
     tipo: configAccion.tipo, categoria: configAccion.categoria, descripcion: configAccion.desc,
-    monto, fecha, foto_url, prestamo_id: prestamo.id
+    monto, fecha, foto_url, prestamo_id: prestamo.id, cuenta_id
   });
 
   if(accion === 'pago' || accion === 'cobro' || accion === 'retorno'){
@@ -1716,6 +1879,8 @@ document.getElementById('formConvertirInversion').addEventListener('submit', gua
 document.getElementById('formPreguntaApoyo').addEventListener('submit', guardarPreguntaApoyo);
 document.getElementById('formNuevoEvento').addEventListener('submit', guardarNuevoEvento);
 document.getElementById('formEditarEvento').addEventListener('submit', guardarEdicionEvento);
+document.getElementById('formNuevaCuenta').addEventListener('submit', guardarNuevaCuenta);
+document.getElementById('formElegirCuentaConfirmar').addEventListener('submit', guardarCuentaYConfirmar);
 
 revisarSesion();
 </script>

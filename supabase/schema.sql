@@ -41,6 +41,19 @@ create table if not exists eventos (
 );
 
 -- ============================================================
+-- TABLA: cuentas
+-- Donde vive fisicamente el dinero (billetera, caja del negocio,
+-- cuentas bancarias). Cada cuenta pertenece a un contexto.
+-- ============================================================
+create table if not exists cuentas (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null,
+  contexto text not null check (contexto in ('personal', 'negocio')),
+  orden integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- ============================================================
 -- TABLA: movimientos
 -- Todo ingreso/egreso, incluidos los generados por préstamos
 -- (desembolso, pago, cobro, interés) y por eventos del negocio.
@@ -56,6 +69,7 @@ create table if not exists movimientos (
   foto_url text,                          -- URL pública del bucket 'sustentos'
   prestamo_id uuid references prestamos(id) on delete set null,
   evento_id uuid references eventos(id) on delete set null,
+  cuenta_id uuid references cuentas(id) on delete set null,
   contexto text not null default 'personal' check (contexto in ('personal', 'negocio')),
   estado text not null default 'confirmado' check (estado in ('confirmado', 'programado')), -- 'programado' = fecha futura, no cuenta en totales hasta confirmarse
   created_at timestamptz not null default now()
@@ -66,6 +80,7 @@ create index if not exists idx_movimientos_estado on movimientos(estado);
 create index if not exists idx_movimientos_prestamo on movimientos(prestamo_id);
 create index if not exists idx_movimientos_evento on movimientos(evento_id);
 create index if not exists idx_movimientos_contexto on movimientos(contexto);
+create index if not exists idx_movimientos_cuenta on movimientos(cuenta_id);
 
 -- ============================================================
 -- RLS — proyecto de uso personal (tú + tu esposa), sin
@@ -74,6 +89,7 @@ create index if not exists idx_movimientos_contexto on movimientos(contexto);
 alter table prestamos enable row level security;
 alter table movimientos enable row level security;
 alter table eventos enable row level security;
+alter table cuentas enable row level security;
 
 create policy "prestamos_all_authenticated" on prestamos
   for all to authenticated using (true) with check (true);
@@ -84,9 +100,16 @@ create policy "movimientos_all_authenticated" on movimientos
 create policy "eventos_all_authenticated" on eventos
   for all to authenticated using (true) with check (true);
 
+create policy "cuentas_all_authenticated" on cuentas
+  for all to authenticated using (true) with check (true);
+
 -- Si el proyecto tiene desactivado "Automatically expose new tables",
 -- estos GRANT son obligatorios (RLS controla filas, no privilegios de tabla):
-grant select, insert, update, delete on prestamos, movimientos, eventos to authenticated;
+grant select, insert, update, delete on prestamos, movimientos, eventos, cuentas to authenticated;
+
+-- Cuentas por defecto (opcional, si se crea el esquema desde cero)
+insert into cuentas (nombre, contexto, orden) values ('Billetera (efectivo)', 'personal', 1);
+insert into cuentas (nombre, contexto, orden) values ('Caja / Cofre', 'negocio', 1);
 
 -- ============================================================
 -- STORAGE — bucket para las capturas/sustentos (Yape, transferencias)
